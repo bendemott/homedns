@@ -305,6 +305,9 @@ class SqliteStorage(IRecordStorage):
             conn.commit()
 
     def log_table(self):
+        """
+        Record in the log the contents of the records table
+        """
         conn = self.initialize()
 
         with self.mutex:

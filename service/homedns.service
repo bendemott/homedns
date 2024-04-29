@@ -1,0 +1,20 @@
+[Unit]
+Description=HomeDNS an api driven DNS server for dynamic DNS and 
+After=network.target
+
+[Service]
+ExecStart=/path/to/your/python/application
+User=your_username
+Group=your_group
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Restart on failure if you want
+Restart=always
+
+# Output to syslog
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=homedns
+
+[Install]
+WantedBy=multi-user.target

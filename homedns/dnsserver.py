@@ -12,9 +12,12 @@ class HomeDnsResolver(common.ResolverBase):
     A Dns Name Resolver that resolves dns names for specific addresses stored by the application
     """
 
-    def __init__(self, record_store: IRecordStorage):
+    def __init__(self, record_store: IRecordStorage, forwarding: bool = True, tld: int = 3600):
+        super().__init__()
         self._store = record_store
         self.log = Logger(self.__class__.__name__)
+        self._tld = tld
+        self._forwarding = forwarding
 
     @property
     def store(self):
@@ -51,23 +54,3 @@ class HomeDnsResolver(common.ResolverBase):
             raise error.DomainError()
 
         return answers, authority, additional
-
-    """
-    Instead of implementing the `query` method you can implement all these other specific methods.
-    ... fyi
-    """
-
-    def lookupAddress(self, name, timeout=None):
-        pass
-
-    def lookupIPV6Address(self, name, timeout=None):
-        pass
-
-    def lookupMailExchange(self, name, timeout=None):
-        pass
-
-    def lookupCanonicalName(self, name, timeout=None):
-        pass
-
-    def lookupNameservers(self, name, timeout=None):
-        pass

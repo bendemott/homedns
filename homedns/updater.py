@@ -2,15 +2,10 @@
 Note, when we are done here we'll split this out into its own little project
 We don't need twisted as a dependency on the client
 """
-
-
 import urllib.request
 
 # query the router
 from twisted.names.dns import IRecord
-
-from twisted.web.server import Site
-Site.displayTracebacks = False
 
 
 # rely on external service
@@ -39,12 +34,12 @@ class AbstractAddressResolver:
     def external_ipv4(self):
         raise NotImplementedError()
 
-import miniupnpc
-u = miniupnpc.UPnP()
-u.discoverdelay = 200
-u.discover()
-u.selectigd()
-print('external ip address: {}'.format(u.externalipaddress()))
+# import miniupnpc
+# u = miniupnpc.UPnP()
+# u.discoverdelay = 200
+# u.discover()
+# u.selectigd()
+# print('external ip address: {}'.format(u.externalipaddress()))
 class UPNPAddressResolver(AbstractAddressResolver):
 
     def external_ipv6(self):
