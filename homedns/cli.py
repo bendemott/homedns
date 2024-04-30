@@ -104,6 +104,7 @@ def main(argv=None):
     elif args.command == CONFIG_DUMP_COMMAND:
         if args.server:
             config = args.config or yaml_file(DEFAULT_SERVER_CONFIG_PATH)
+            config = ServerConfig(config).apply_defaults()
             if args.json:
                 print(json.dumps(config, indent=4))
             else:
