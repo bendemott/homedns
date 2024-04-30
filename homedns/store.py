@@ -55,7 +55,11 @@ class IRecordStorage(ABC):
         pass
 
     @abstractmethod
-    def replace_record(self, record: IRecord, fqdn: str):
+    def get_record(self, record: IRecord, fqdn: str):
+        pass
+
+    @abstractmethod
+    def update_record(self, record: IRecord, fqdn: str):
         """
         Replaces all records associated with `fqdn` with this record
 
@@ -134,6 +138,9 @@ class SqliteStorage(IRecordStorage):
 
     @classmethod
     def get_record_class(cls, class_name: str):
+        """
+        Given a class_name return the class object
+        """
         try:
             return cls.RECORD_CLASS_NAMES[class_name]
         except KeyError:
@@ -241,7 +248,7 @@ class SqliteStorage(IRecordStorage):
 
         return records
 
-    def replace_record(self, record: IRecord, fqdn: str):
+    def update_record(self, record: IRecord, fqdn: str):
         """
         Replaces all records associated with `fqdn` with this record
 
@@ -249,7 +256,75 @@ class SqliteStorage(IRecordStorage):
         :param fqdn:
         :return:
         """
-        return self._add(record, fqdn, True)
+        conn = self.initialize()
+
+        with self.mutex:
+            record_type = record.__class__
+            type_name = record_type.__name__
+            assert (record.TYPE is not None)
+            fqdn = fqdn.lower()  # domain names are case-insensitive
+            cursor = conn.cursor()
+
+            updated = datetime.now()
+
+            if record_type in (Record_A, Record_AAAA):
+                # update hostname with new ip address
+                cursor.execute(
+                    f"""
+                    UPDATE {self.RECORDS_TABLE}
+                    SET
+                        address = ?,
+                        ttl = ?,
+                        updated = ?
+                    WHERE
+                        type = ?
+                        AND
+                        fqdn = ?
+                    """,
+                    (str(ipaddress.ip_address(record.address)), record.ttl, updated, type_name, fqdn))
+
+            elif record_type == Record_CNAME:
+                # update the hostname that `alias` (cname) points to
+                # alias is the CNAME
+                # fqdn is the HOSTNAME cname redirects to
+                cursor.execute(
+                    f"""
+                    UPDATE {self.RECORDS_TABLE}
+                    SET
+                        fqdn = ?,
+                        ttl = ?,
+                        updated = ?
+                    WHERE
+                        type = ?
+                        AND
+                        alias = ?
+                    """,
+                    (fqdn, record.ttl, updated, type_name, record.cname.lower().decode()))
+
+            elif record_type == Record_MX:
+                # for a mx record
+                #   fqdn is the domain to match the record against
+                #   alias is the domain name of the mail server
+                #   record.name holds the mx record
+                # Update the hostname that `alias` points to
+                cursor.execute(
+                    f"""
+                    UPDATE {self.RECORDS_TABLE}
+                    SET
+                        fqdn = ?,
+                        ttl = ?,
+                        updated = ?,
+                        priority = ?
+                    WHERE
+                        type = ?
+                        AND
+                        alias = ?
+                    """,
+                    (fqdn, record.ttl, updated, record.priority, type_name, record.name.lower().decode()))
+            else:
+                raise ValueError(f'unsupported record type: {type_name} [{record_type.TYPE}]')
+
+            conn.commit()
 
     def create_record(self, record: IRecord, fqdn: str):
         """
