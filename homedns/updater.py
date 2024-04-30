@@ -74,25 +74,3 @@ class AmazonAwsAddressResolver(AbstractAddressResolver):
 
     def external_ipv4(self):
         raise NotImplementedError()
-
-
-class HomeDnsClient:
-    """
-    The client communicates and authenticates with the server via its REST api
-    the client is capable of setting, and getting IP addresses configured for specific domains
-    """
-
-    def __init__(self, address: str, port=8080, credentials=None):
-        pass
-
-    def set(self, record: IRecord):
-        """
-        Set a DNS record
-
-        :param record: A dns record that will be created or updated
-        :return:
-        """
-        pass
-
-    def get(self, fqdn) -> IRecord:
-        pass
