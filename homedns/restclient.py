@@ -2,7 +2,7 @@ import json
 import ssl
 from abc import ABC, abstractmethod
 from base64 import b64encode
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import urllib.request
 from urllib.parse import urlunparse, urlencode
 from typing import Any
@@ -46,16 +46,6 @@ All query types
     TKEY: "TKEY",
     TSIG: "TSIG",
     
->>> from twisted.names import client
->>> client.getHostByName('www.example.com')
-<Deferred at 0xf5c5a8 waiting on Deferred at 0xf5cb90>
->>> _
-<Deferred at 0xf5c5a8 current result: '2606:2800:220:6d:26bf:1447:1097:aa7'>
-
->>> client.lookupMailExchange('twistedmatrix.com')
-<Deferred at 0xf5cd40 waiting on Deferred at 0xf5cea8>
->>> _
-<Deferred at 0xf5cd40 current result: ([<RR name=twistedmatrix.com type=MX class=IN ttl=1s auth=False>], [], [])>
 """
 
 
@@ -68,17 +58,27 @@ class ClientAuthentication(ABC):
 
 class JwtAuthenticationRS256(ClientAuthentication):
 
-    def __init__(self, private_key: str, audience=None, issuer=None):
+    def __init__(self, private_key: str, subject: str, audience: str = None, issuer: str = None, expire_in: int = 0):
+        """
+        :param private_key: The jwt signing key, this is your "password"
+        :param subject: The jwt identity / account
+        :param audience: Audience, who the token is intended for
+        :param issuer: Issuer, who created the token
+        :param expire_in: How many seconds in the future to set the token to expire
+        """
         payload = {
             'iat': datetime.now(tz=timezone.utc),
             'nbf': datetime.now(tz=timezone.utc),
-            'exp': datetime.now(tz=timezone.utc)
+            'exp': datetime.now(tz=timezone.utc) + timedelta(seconds=expire_in),
+            'sub': subject
         }
         if audience:
             payload['aud'] = audience
         if issuer:
             payload['iss'] = issuer
 
+        # encodes a base64 token, encrypted with private_key
+        # asymmetric encryption is much safer than symmetric (HS256)
         self._token = jwt.encode(payload, private_key, algorithm="RS256")
 
     def get_headers(self) -> dict[str, str]:
@@ -196,31 +196,37 @@ class Client:
         :param address: The address that will be set on record with hostname
         :param ttl: update interval of the dns record
         """
-        self.put(f'/a/update', {'hostname': hostname, 'address': address, 'ttl': ttl})
+        return self.put(f'/a/update', {'hostname': hostname, 'address': address, 'ttl': ttl})
 
     def create_a_record(self, hostname, address, ttl):
         """
         Create a hostname record
         """
-        self.post('/a/create', {'hostname': hostname, 'address': address, 'ttl': ttl})
+        return self.post('/a/create', {'hostname': hostname, 'address': address, 'ttl': ttl})
 
     def upsert_a_record(self, hostname, address, ttl):
-        self.put('/a/upsert', {'hostname': hostname, 'address': address, 'ttl': ttl})
+        return self.put('/a/upsert', {'hostname': hostname, 'address': address, 'ttl': ttl})
 
     def get_a_by_hostname(self, hostname):
         """
         Return A records by hostname
         """
-        self.get(f'/a/hostname/{hostname}')
+        return self.get(f'/a/hostname/{hostname}')
+
+    def get_cname_by_hostname(self, hostname):
+        """
+        Return A records by hostname
+        """
+        return self.get(f'/cname/hostname/{hostname}')
 
     def delete_records_by_hostname(self, hostname, record_type=None):
-        self.delete('/hostname', {'hostname': hostname, 'type': record_type})
+        return self.delete('/hostname', {'hostname': hostname, 'type': record_type})
 
     def delete_records_by_address(self, address, record_type=None):
-        self.delete('/address', {'address': address, 'type': record_type})
+        return self.delete('/address', {'address': address, 'type': record_type})
 
     def search_address(self, address, record_type=None):
-        self.get('/search/address', {'address': address, 'type': record_type})
+        return self.get('/search/address', {'address': address, 'type': record_type})
 
     def search_hostname(self, hostname, record_type=None):
-        self.get('/search/hostname', {'hostname': hostname, 'type': record_type})
+        return self.get('/search/hostname', {'hostname': hostname, 'type': record_type})

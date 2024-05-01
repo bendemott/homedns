@@ -55,7 +55,7 @@ class IRecordStorage(ABC):
         pass
 
     @abstractmethod
-    def get_record(self, record: IRecord, fqdn: str):
+    def get_record_by_hostname(self, fqdn: str, record_type: str):
         pass
 
     @abstractmethod
@@ -119,6 +119,7 @@ class SqliteStorage(IRecordStorage):
                         raise
                     time.sleep(1)
 
+            # TODO figure out how to hash for comparison
             cursor = conn.execute("SELECT name, sql FROM sqlite_master WHERE type=? AND name = ?",
                                   ('table', self.RECORDS_TABLE))
             table = cursor.fetchone()
@@ -160,7 +161,13 @@ class SqliteStorage(IRecordStorage):
         else:
             raise ValueError(f'unsupported record type: {record_class.__name__} [{record_class.TYPE}]')
 
-    def name_search(self, hostname: str, query_type: int = None) -> list[HostnameAndRecord]:
+    def name_search(self, hostname: str, query_type: str = None) -> list[HostnameAndRecord]:
+        """
+        Search for records by hostname, limimt the search to `query_type`
+
+        :param hostname: the hostname to search for
+        :param query_type: a value like `dns.A`, `dns.CNAME`, `dns.MX`, etc.
+        """
         conn = self.initialize()
 
         hostname = hostname.lower()
@@ -378,6 +385,13 @@ class SqliteStorage(IRecordStorage):
                 raise ValueError(f'unsupported record type: {type_name} [{record_type.TYPE}]')
 
             conn.commit()
+
+    def get_record_by_hostname(self, fqdn: str, record_type: str) -> list[HostnameAndRecord]:
+        """
+        Retrieve a record by fqdn field (hostname)
+        """
+        return self.name_search(hostname=fqdn, query_type=record_type)
+
 
     def log_table(self):
         """

@@ -1,16 +1,105 @@
 import collections.abc
 import copy
-from os.path import join
+from abc import ABC, abstractmethod
+from os.path import join, dirname, getmtime
 import os
 from typing import Any
 
+from twisted.names import dns
+from yaml import load, dump
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ImportError:
+    from yaml import Loader, Dumper
 
-class ServerConfig:
-    def __init__(self, config: dict):
-        self._config = config
+from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_NAME_SERVERS
 
-    @classmethod
-    def get_default(cls, directory=None) -> dict[str, Any]:
+
+class AbstractConfig(ABC):
+    """
+    Generic yaml configuration with convenience methods
+    """
+    def __init__(self, path: str):
+        self._modify_time = 0
+        self._path = None
+        self._config = {}
+        self.load_file(path)
+
+    @property
+    def path(self) -> str:
+        """
+        The path of the currently loaded config file
+        """
+        return self._path
+
+    @property
+    def modified(self) -> float:
+        """
+        Config file modify time (epoch)
+        """
+        return self._modify_time
+
+    @property
+    def config(self):
+        """
+        Retrieve current configuration
+        """
+        if getmtime(self.path) > self.modified:
+            self.reload()
+
+        return self._config
+
+    def reload(self):
+        """
+        Reload configuration from file
+        """
+        self.load_file(self._path)
+
+    def load_file(self, path):
+        """
+        Load yaml configuration from file
+        """
+        self._path = path
+        self._modify_time = getmtime(path)
+        self._config = load(open(path, 'r'), Loader)
+        self.apply_defaults(self.get_default(dirname(path)))
+
+    @abstractmethod
+    def get_default(self, directory: str):
+        pass
+
+    def apply_defaults(self, default_config=None):
+        return self._recursive_update(self._config, default_config or ServerConfig.get_default())
+
+    def _recursive_update(self, config, defaults):
+        def update(d, u):
+            for k, v in u.items():
+                if isinstance(v, collections.abc.Mapping):
+                    d[k] = update(d.get(k, {}), v)
+                else:
+                    d[k] = v
+            return d
+
+        updated = copy.deepcopy(defaults)
+        return update(updated, config)
+
+    def update(self):
+        """
+        Write configuration back to disk
+        """
+        with open(self.path, 'w') as fp:
+            dump(self._config, fp, Dumper, indent=2)
+
+    def __str__(self):
+        return dump(self._config, indent=2, Dumper=Dumper)
+
+
+
+class ServerConfig(AbstractConfig):
+    def __init__(self, path=DEFAULT_SERVER_CONFIG_PATH):
+        super().__init__(path)
+
+    def get_default(self, directory: str = None) -> dict[str, Any]:
         if not directory:
             directory = os.getcwd()
 
@@ -30,7 +119,7 @@ class ServerConfig:
                 "algorithms": [
                     "RS256"
                 ],
-                "secrets_path": join(directory, "jwt_secrets"),
+                "config": join(directory, "jwt_secrets/jwt_subjects.yaml"),
                 "issuer": "homedns-clients",
                 "audience": [
                     "homedns-api"
@@ -47,17 +136,14 @@ class ServerConfig:
                 "enabled": False
             },
             "dns": {
-                "listen_tcp": 53,
-                "listen_udp": 53,
+                "listen_tcp": dns.PORT,
+                "listen_udp": dns.PORT,
                 "cache": {
                     "enabled": True
                 },
                 "forwarding": {
                     "enabled": True,
-                    "servers": [
-                        "208.67.222.222",
-                        "208.67.220.220"
-                    ],
+                    "servers": DEFAULT_NAME_SERVERS,
                     "timeouts": [
                         1,
                         3,
@@ -71,23 +157,9 @@ class ServerConfig:
                     }
                 },
                 "tld": 300,
-                "verbosity": 2
+                "verbosity": 1
             }
         }
 
         return conf
 
-    def apply_defaults(self, default_config=None):
-        return self._recursive_update(self._config, default_config or ServerConfig.get_default())
-
-    def _recursive_update(self, config, defaults):
-        def update(d, u):
-            for k, v in u.items():
-                if isinstance(v, collections.abc.Mapping):
-                    d[k] = update(d.get(k, {}), v)
-                else:
-                    d[k] = v
-            return d
-
-        updated = copy.deepcopy(defaults)
-        return update(updated, config)

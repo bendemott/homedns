@@ -8,8 +8,9 @@ from os.path import isfile
 import json
 
 from homedns.server import config_main
-from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_UPDATER_CONFIG_PATH, DEFAULT_CONFIG_LEVEL
+from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_LOG_LEVEL
 from homedns.config import ServerConfig
+from homedns.cli.common import file_exists
 
 from yaml import load, dump, YAMLError
 try:
@@ -21,20 +22,6 @@ SERVER_COMMAND = 'server'
 UPDATER_COMMAND = 'updater'
 CONFIG_DUMP_COMMAND = 'config-dump'
 CONFIG_TEMPLATE_COMMAND = 'config-template'
-
-
-def file_exists(arg):
-    if not isfile(arg):
-        raise argparse.ArgumentTypeError(f'"{arg}" invalid file')
-    return arg
-
-
-def yaml_file(arg):
-    file_exists(arg)
-    try:
-        return load(open(arg), Loader)
-    except YAMLError as e:
-        raise argparse.ArgumentTypeError(f'not a yaml file: "{arg}", error: {e}')
 
 
 def main(argv=None):
@@ -57,19 +44,7 @@ def main(argv=None):
         metavar='PATH',
         help=f'Config path, default="{DEFAULT_SERVER_CONFIG_PATH}"',
         default=DEFAULT_SERVER_CONFIG_PATH,
-        type=yaml_file
-    )
-
-    # /////////////////////////////////////////////////////////////////////////
-    # /////////////////////////////////////////////////////////////////////////
-
-    server = subparsers.add_parser(UPDATER_COMMAND, help='Start Updater')
-    server.add_argument(
-        '--config',
-        metavar='PATH',
-        help=f'Config path, default="{DEFAULT_UPDATER_CONFIG_PATH}"',
-        default=DEFAULT_UPDATER_CONFIG_PATH,
-        type=yaml_file
+        type=file_exists
     )
 
     # /////////////////////////////////////////////////////////////////////////
@@ -80,12 +55,7 @@ def main(argv=None):
         '--config',
         metavar='PATH',
         help=f'Config path',
-        type=yaml_file
-    )
-    server.add_argument(
-        '--server',
-        action='store_true',
-        help=f'Show server config'
+        type=file_exists
     )
     server.add_argument(
         '--json',
@@ -97,19 +67,15 @@ def main(argv=None):
 
     if args.command == SERVER_COMMAND:
         server = ServerConfig(args.config)
-        config = server.apply_defaults()
-        config_main(config, DEFAULT_CONFIG_LEVEL if not args.debug else 'debug')
+        config_main(server.config, DEFAULT_CONFIG_LEVEL if not args.debug else 'debug')
     elif args.command == UPDATER_COMMAND:
         raise NotImplemented()
     elif args.command == CONFIG_DUMP_COMMAND:
-        if args.server:
-            config = args.config or yaml_file(DEFAULT_SERVER_CONFIG_PATH)
-            config = ServerConfig(config).apply_defaults()
-            if args.json:
-                print(json.dumps(config, indent=4))
-            else:
-                print(dump(config, indent=4))
-
+        config = ServerConfig()
+        if args.json:
+            print(json.dumps(config.config, indent=4))
+        else:
+            print(str(config))
 
 
 if __name__ == '__main__':

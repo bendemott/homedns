@@ -14,7 +14,7 @@ jwt_auth: # JWT authentication options
   # a key pair must exist between the server and client
   algorithms: ["RS256"]
   # secrets_path = Secrets will be stored here, they can be generated via CLI `homedns-jks` --help`
-  secrets_path: "/etc/homedns/jwt_secrets"
+  subjects: "/etc/homedns/jwt_secrets/jwt_subjects.yaml"
   issuer: "homedns-clients"  # the clients issuer 'iss' must match
   audience: ["homedns-api"]  # the clients audience 'aud' must match
   leeway: 5  # seconds allowed between signing and the server validating the jwt token

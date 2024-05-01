@@ -2,7 +2,7 @@
 If someone calls `python3 -m homedns` this is called!
 """
 import sys
-from homedns.cli import main as cli_main
+from homedns.cli.server import main as cli_main
 
 
 def main(argv=None):

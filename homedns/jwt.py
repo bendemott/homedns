@@ -3,6 +3,9 @@ JWT Cred module for Twisted
 
 To understand how json web tokens work see: https://github.com/bendemott/homedns
 """
+import uuid
+from dataclasses import dataclass, asdict
+from datetime import datetime
 from typing import Any
 
 import jwt
@@ -15,6 +18,9 @@ from twisted.logger import Logger
 from twisted.web.iweb import ICredentialFactory
 from twisted.cred import error
 from zope.interface import implementer
+
+from homedns.config import AbstractConfig
+from homedns.constants import DEFAULT_JWT_SUBJECTS_PATH
 
 
 @implementer(ICredentials)
@@ -127,3 +133,45 @@ class JwtCredentialFactory(object):
         public_key = self._creds[subject]
 
         return JwtCredential(token=response, payload=unverified, secret=public_key)
+
+
+@dataclass
+class JwtSubject:
+    subject: str = None
+    created: datetime = None
+    certificate: str = None
+
+    def __post_init__(self):
+        if not self.subject:
+            self.subject = JwtSubject.create_subject()
+        if not self.created:
+            datetime.now().timestamp()
+
+    @classmethod
+    def create_subject(cls):
+        return str(uuid.uuid4())
+
+
+class JwtFileCredentials(AbstractConfig):
+    """
+    Store JWT file credentials
+    """
+
+    def __init__(self, path: str = DEFAULT_JWT_SUBJECTS_PATH):
+        # create the file if it doesn't exist
+        open(path, 'a').close()
+        # super will do the work
+        super().__init__(path)
+
+    def get_default(self, directory: str = None):
+        return {}
+
+    def add_subject(self, sub: JwtSubject):
+        """
+        Add a new subject to the jwt credentials file
+        """
+        if not sub.certificate:
+            raise ValueError('Certificate cannot be empty')
+
+        self.config[sub.subject] = asdict(sub)
+        self.update()

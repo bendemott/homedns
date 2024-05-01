@@ -27,4 +27,6 @@ Repository = "https://github.com/bendemott/homedns"
 Issues = "https://github.com/bendemott/homedns/issues"
 
 [project.scripts]
-homedns = "homedns:main"
+homedns-server = "homedns.cli.server:main"
+homedns-api = "homedns.cli.restclient:main"
+homedns-jwt = "homedns.cli.jwt:main"
