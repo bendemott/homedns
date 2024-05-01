@@ -1,3 +1,6 @@
+from dataclasses import asdict
+
+from twisted.names import dns
 from twisted.names.dns import Record_A
 from twisted.internet import threads
 
@@ -5,10 +8,11 @@ from klein import Klein
 import json
 from twisted.web.http import Request
 from twisted.web.error import Error
-from twisted.web._responses import BAD_REQUEST
+from twisted.web._responses import BAD_REQUEST, OK
 from twisted.logger import Logger
 
-from homedns.store import IRecordStorage
+from homedns.store import IRecordStorage, HostnameAndRecord
+
 
 # headers = { 'Authorization' : 'Basic %s' % base64.b64encode("username:password") }
 
@@ -16,15 +20,17 @@ from homedns.store import IRecordStorage
 class DNSRestApi:
     app = Klein()
 
-    def __init__(self, store: IRecordStorage):
+    def __init__(self, store: IRecordStorage, default_ttl=300):
         self.store = store
         self.log = Logger(self.__class__.__name__)
+        self._ttl = default_ttl
 
-    @app.route('/')
+    @app.route('/ip4', methods=['GET'])
     def home(self, request: Request):
+        request.setHeader(b'Content-Type', b'application/text')
         return request.getClientAddress()
 
-    @app.route('/create/a', methods=['PUT'])
+    @app.route('/create/a', methods=['POST'])
     async def create_a_record(self, request: Request):
         payload = request.content.read().decode()
         self.log.debug('received payload: {json}', json=payload)
@@ -35,18 +41,22 @@ class DNSRestApi:
         try:
             hostname = data['name']
             address = data['address']
-            replace = data['replace']
-            ttl = data['ttl']
+            ttl = data.get('ttl', self._ttl)
         except KeyError as e:
             raise Error(BAD_REQUEST, f'Missing field in payload: {e.args[0]}'.encode())
 
         record = Record_A(address=address, ttl=ttl)
-        if replace:
-            await threads.deferToThread(self.store.replace_record, record=record, fqdn=hostname)
-        else:
-            await threads.deferToThread(self.store.create_record, record=record, fqdn=hostname)
+        await threads.deferToThread(self.store.create_record, record=record, fqdn=hostname)
+        request.setResponseCode(OK)
+        return {'ok': True}
 
-        await threads.deferToThread(self.store.log_table)
+    @app.route('/a/hostname/<hostname>', methods=['POST'])
+    async def get_a_by_hostname(self, request: Request, hostname: bytes):
+        hostname = hostname.decode()
 
-        request.setResponseCode(200)
-        return 'OK'
+        result: list[HostnameAndRecord] = await threads.deferToThread(self.store.get_record_by_hostname, fqdn=hostname, record_type=dns.A)
+        data = []
+        for r in result:
+            data.append({'hostname': r.hostname, 'address': r.record.address, 'modified': r.modified})
+
+        return json.dumps(data)
