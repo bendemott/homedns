@@ -66,23 +66,30 @@ class JwtAuthenticationRS256(ClientAuthentication):
         :param issuer: Issuer, who created the token
         :param expire_in: How many seconds in the future to set the token to expire
         """
+        self.issuer = issuer
+        self.audience = audience
+        self.subject = subject
+        self.expire_in = expire_in
+        self.private_key = private_key
+
+    def get_token(self):
         payload = {
             'iat': datetime.now(tz=timezone.utc),
             'nbf': datetime.now(tz=timezone.utc),
-            'exp': datetime.now(tz=timezone.utc) + timedelta(seconds=expire_in),
-            'sub': subject
+            'exp': datetime.now(tz=timezone.utc) + timedelta(seconds=self.expire_in),
+            'sub': self.subject
         }
-        if audience:
-            payload['aud'] = audience
-        if issuer:
-            payload['iss'] = issuer
+        if self.audience:
+            payload['aud'] = self.audience
+        if self.issuer:
+            payload['iss'] = self.issuer
 
         # encodes a base64 token, encrypted with private_key
         # asymmetric encryption is much safer than symmetric (HS256)
-        self._token = jwt.encode(payload, private_key, algorithm="RS256")
+        return jwt.encode(payload, self.private_key, algorithm="RS256")
 
     def get_headers(self) -> dict[str, str]:
-        return {'Authorization': f'Bearer {self._token}'}
+        return {'Authorization': f'Bearer {self.get_token()}'}
 
 
 class BasicAuthentication(ClientAuthentication):

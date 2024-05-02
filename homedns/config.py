@@ -61,7 +61,8 @@ class AbstractConfig(ABC):
         """
         self._path = path
         self._modify_time = getmtime(path)
-        self._config = load(open(path, 'r'), Loader)
+        # an empty file will load to None
+        self._config = load(open(path, 'r'), Loader) or {}
         self.apply_defaults(self.get_default(dirname(path)))
 
     @abstractmethod
@@ -69,9 +70,10 @@ class AbstractConfig(ABC):
         pass
 
     def apply_defaults(self, default_config=None):
-        return self._recursive_update(self._config, default_config or ServerConfig.get_default())
+        return self._recursive_update(self._config, default_config or self.get_default())
 
     def _recursive_update(self, config, defaults):
+        # d is the thing we are updating
         def update(d, u):
             for k, v in u.items():
                 if isinstance(v, collections.abc.Mapping):
@@ -80,8 +82,7 @@ class AbstractConfig(ABC):
                     d[k] = v
             return d
 
-        updated = copy.deepcopy(defaults)
-        return update(updated, config)
+        return update(config, defaults)
 
     def update(self):
         """
@@ -92,8 +93,6 @@ class AbstractConfig(ABC):
 
     def __str__(self):
         return dump(self._config, indent=2, Dumper=Dumper)
-
-
 
 class ServerConfig(AbstractConfig):
     def __init__(self, path=DEFAULT_SERVER_CONFIG_PATH):
@@ -119,7 +118,7 @@ class ServerConfig(AbstractConfig):
                 "algorithms": [
                     "RS256"
                 ],
-                "config": join(directory, "jwt_secrets/jwt_subjects.yaml"),
+                "subjects": join(directory, "jwt_secrets/jwt_subjects.yaml"),
                 "issuer": "homedns-clients",
                 "audience": [
                     "homedns-api"
@@ -133,7 +132,8 @@ class ServerConfig(AbstractConfig):
                 }
             },
             "basic_auth": {
-                "enabled": False
+                "enabled": False,
+                "secrets": None
             },
             "dns": {
                 "listen_tcp": dns.PORT,

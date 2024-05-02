@@ -14,7 +14,7 @@ LIST_COMMAND = 'list'
 
 def load_jwt_creds(config_path):
     server = ServerConfig(config_path)
-    jwt_path = server.config['jwt']['subjects']
+    jwt_path = server.config['jwt_auth']['subjects']
     return JwtFileCredentials(jwt_path)
 
 
@@ -32,15 +32,15 @@ def cli_add(args):
             'key': pair.key.decode()
         }))
     else:
-        print('JWT CREDENTIALS GENERATED')
-        print('=' * 20)
+        print('\nJWT CREDENTIALS GENERATED')
+        print('')
         print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
         print(f'SUBJECT: {subject.subject}')
         print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
-        print('\n')
+        print('')
         print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
         print('>>>>>>> PRIVATE KEY, COPY AND SAVE SECURELY FOR CLIENT SIDE AUTH >>>>>>>>')
-        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
+        print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>   >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
         print(pair.key.decode())
         print(f'\nPublic key saved in "{creds.path}"')
 
@@ -54,7 +54,7 @@ def cli_list(args):
 
 
 def main(argv=None):
-    argv = argv or ['']
+    argv = argv or sys.argv
 
     parser = argparse.ArgumentParser('jwt', description='Configure JWT Auth')
     parser.add_argument(
@@ -65,11 +65,11 @@ def main(argv=None):
         type=file_exists
     )
     parser.add_argument('--debug', action='store_true', help='Debug logging')
+    subparsers = parser.add_subparsers(dest='command')
 
     # /////////////////////////////////////////////////////////////////////////
     # ////////////////////////////   GET   ////////////////////////////////////
 
-    subparsers = parser.add_subparsers(dest='command')
     add = subparsers.add_parser(ADD_COMMAND, help='Create a new JWT key pair and identity (subject)')
     add.add_argument('--json', action='store_true', help='Return json output (useful for automation)')
 
@@ -77,7 +77,6 @@ def main(argv=None):
     # /////////////////////////////////////////////////////////////////////////
 
     args = parser.parse_args(argv[1:])
-
     if args.command == ADD_COMMAND:
         cli_add(args)
     elif args.command == LIST_COMMAND:

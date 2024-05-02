@@ -25,7 +25,7 @@ CONFIG_TEMPLATE_COMMAND = 'config-template'
 
 
 def main(argv=None):
-    argv = argv or ['']
+    argv = argv or sys.argv
 
     parser = argparse.ArgumentParser('homedns')
     parser.add_argument(
@@ -67,7 +67,7 @@ def main(argv=None):
 
     if args.command == SERVER_COMMAND:
         server = ServerConfig(args.config)
-        config_main(server.config, DEFAULT_CONFIG_LEVEL if not args.debug else 'debug')
+        config_main(server.config, DEFAULT_LOG_LEVEL if not args.debug else 'debug')
     elif args.command == UPDATER_COMMAND:
         raise NotImplemented()
     elif args.command == CONFIG_DUMP_COMMAND:
