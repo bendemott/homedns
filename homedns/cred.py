@@ -1,35 +1,38 @@
 import os
 import json
-
+import sys
 from typing import Any, Dict, Optional, Tuple, Union
 
+import attr
 from twisted.cred.checkers import ICredentialsChecker
 from twisted.cred.portal import IRealm
-from twisted.web.resource import IResource
+from twisted.web._auth.wrapper import HTTPAuthSessionWrapper, UnauthorizedResource
+from twisted.web.resource import IResource, _UnsafeErrorPage
 from zope.interface import implementer
 
 from twisted.cred import error
 from twisted.cred.credentials import (
     IUsernameHashedPassword,
-    IUsernamePassword,
+    IUsernamePassword, Anonymous,
 )
 from twisted.internet import defer
 from twisted.internet.defer import Deferred, succeed
-from twisted.logger import Logger
+from twisted.logger import Logger, textFileLogObserver
 from twisted.python import failure
+from twisted.web import util
 
 
 @implementer(IRealm)
-class PassthroughRealm(object):
+@attr.s
+class PassthroughKleinRealm(object):
     """
     A realm which passes through resources that are authenticated
-    users.
+    users, works with Klein
     """
-    def __init__(self, resource):
-        self._resource = resource
+    resource = attr.ib()
 
     def requestAvatar(self, avatarId, mind, *interfaces):
-        return succeed((IResource, self._resource, lambda: None))
+        return succeed((IResource, self.resource, lambda: None))
 
 
 @implementer(ICredentialsChecker)
@@ -188,3 +191,58 @@ class JsonPasswordDB:
                 return defer.maybeDeferred(credentials.checkPassword, password).addCallback(
                     self._cbPasswordMatch, user
                 )
+
+
+@implementer(IResource)
+class RestAuthWrapper(HTTPAuthSessionWrapper):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _authorizedResource(self, request):
+        """
+        Get the L{IResource} which the given request is authorized to receive.
+        If the proper authorization headers are present, the resource will be
+        requested from the portal.  If not, an anonymous login attempt will be
+        made.
+        """
+        authheader = request.getHeader(b"authorization")
+        if not authheader:
+            self._log.info(f'authorization header missing')
+            return util.DeferredResource(self._login(Anonymous()))
+
+        factory, respString = self._selectParseHeader(authheader)
+        if factory is None:
+            self._log.error(f'No credential factory was matched, login will fail')
+            return UnauthorizedResource(self._credentialFactories)
+        try:
+            self._log.debug(f'calling {factory.__class__.__name__}.decode(<{factory.scheme} token>, request={request.uri})')
+            credentials = factory.decode(respString, request)
+        except error.LoginFailed:
+            self._log.error(f'Credential Factory [{factory.__class__.__name__}] login failed')
+            return UnauthorizedResource(self._credentialFactories)
+        except BaseException:
+            self._log.failure("Unexpected failure from credentials factory")
+            return _UnsafeErrorPage(500, "Internal Error", "")
+        else:
+            assert credentials
+            return util.DeferredResource(self._login(credentials))
+
+    def _selectParseHeader(self, header):
+        """
+        Choose an C{ICredentialFactory} from C{_credentialFactories}
+        suitable to use to decode the given I{Authenticate} header.
+
+        @return: A two-tuple of a factory and the remaining portion of the
+            header value to be decoded or a two-tuple of L{None} if no
+            factory can decode the header value.
+        """
+        elements = header.split(b" ")
+        scheme = elements[0].lower()
+        for fact in self._credentialFactories:
+            if fact.scheme == scheme:
+                self._log.debug(f'Credential factory [{fact.__class__.__name__}] matches scheme: "{scheme}"')
+                return (fact, b" ".join(elements[1:]))
+
+        self._log.debug(f'No credential factory found for scheme: "{scheme}"')
+        return (None, None)

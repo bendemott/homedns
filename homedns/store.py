@@ -47,7 +47,7 @@ class IRecordStorage(ABC):
     RECORD_CLASS_NAMES = {cls.__name__: cls for cls in RECORD_CLASSES}
 
     @abstractmethod
-    def name_search(self, hostname: str, query_type=None) -> Iterator[HostnameAndRecord]:
+    def name_search(self, hostname: str, record_type: int = None) -> Iterator[HostnameAndRecord]:
         pass
 
     @abstractmethod
@@ -55,7 +55,11 @@ class IRecordStorage(ABC):
         pass
 
     @abstractmethod
-    def get_record_by_hostname(self, fqdn: str, record_type: str):
+    def get_record_by_hostname(self, fqdn: str, record_type: int):
+        pass
+
+    @abstractmethod
+    def delete_record_by_hostname(self, fqdn: str, record_type: int) -> int:
         pass
 
     @abstractmethod
@@ -161,13 +165,16 @@ class SqliteStorage(IRecordStorage):
         else:
             raise ValueError(f'unsupported record type: {record_class.__name__} [{record_class.TYPE}]')
 
-    def name_search(self, hostname: str, query_type: str = None) -> list[HostnameAndRecord]:
+    def name_search(self, hostname: str, record_type: int = None) -> list[HostnameAndRecord]:
         """
         Search for records by hostname, limimt the search to `query_type`
 
         :param hostname: the hostname to search for
-        :param query_type: a value like `dns.A`, `dns.CNAME`, `dns.MX`, etc.
+        :param record_type: a value like `dns.A`, `dns.CNAME`, `dns.MX`, etc.
         """
+        if record_type not in dns.QUERY_TYPES:
+            raise ValueError(f'not a valid record type constant: {record_type}')
+
         conn = self.initialize()
 
         hostname = hostname.lower()
@@ -175,12 +182,12 @@ class SqliteStorage(IRecordStorage):
 
         # query_type acts as a filter to control what record types are returned
         filter_cond = ''
-        if query_type:
+        if record_type:
             filter_cond = 'AND type = ?'
             try:
-                sql_args.append(self.RECORD_MAP[query_type].__name__)
+                sql_args.append(self.RECORD_MAP[record_type].__name__)
             except KeyError as e:
-                raise ValueError(f'Unsupported record type: "{dns.QUERY_TYPES.get(query_type)}" [{query_type}]')
+                raise ValueError(f'Unsupported record type: "{dns.QUERY_TYPES.get(record_type)}" [{record_type}]')
 
         records = []
 
@@ -217,7 +224,7 @@ class SqliteStorage(IRecordStorage):
         with self.mutex:
             cursor = conn.execute(f"SELECT type, fqdn, alias, address, ttl, priority, updated FROM "
                                   f"{self.RECORDS_TABLE} WHERE alias = ? AND type = ?", [cname,
-                                                                                               Record_CNAME.__name__])
+                                                                                                   Record_CNAME.__name__])
             data = cursor.fetchall()
         for row in data:
             record_type, fqdn, alias, address, ttl, priority, updated = row
@@ -386,11 +393,36 @@ class SqliteStorage(IRecordStorage):
 
             conn.commit()
 
-    def get_record_by_hostname(self, fqdn: str, record_type: str) -> list[HostnameAndRecord]:
+    def get_record_by_hostname(self, fqdn: str, record_type: int) -> list[HostnameAndRecord]:
         """
         Retrieve a record by fqdn field (hostname)
+        :param fqdn: The domain name to search for
+        :param record_type: A constant from `dns`... `dns.A` etc.
         """
-        return self.name_search(hostname=fqdn, query_type=record_type)
+        return self.name_search(hostname=fqdn, record_type=record_type)
+
+    def delete_record_by_hostname(self, fqdn: str, record_type: int) -> int:
+        """
+        Delete any record of the given type that `fqdn` matches
+
+        :param fqdn: The domain name to delete records for
+        :record_type: the type of record to delete (required)
+        :returns: Number of records deleted
+        """
+        if record_type not in dns.QUERY_TYPES:
+            raise ValueError(f'not a valid record type constant: {record_type}')
+
+        conn = self.initialize()
+
+        type_name = self.RECORD_MAP[record_type].__name__
+
+        with self.mutex:
+            cursor = conn.cursor()
+            cursor.execute(f"DELETE FROM {self.RECORDS_TABLE} WHERE type = ? AND fqdn = ?",
+                           (type_name, fqdn))
+            conn.commit()
+
+            return cursor.rowcount
 
 
     def log_table(self):

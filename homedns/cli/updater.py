@@ -8,17 +8,20 @@ import argparse
 from os.path import isfile
 import json
 
-from homedns.server import config_main
-from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_UPDATER_CONFIG_PATH, DEFAULT_CONFIG_LEVEL
+from homedns.server import server_main
+from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_UPDATER_CONFIG_PATH, DEFAULT_LOG_LEVEL
 from homedns.config import ServerConfig
 
 from yaml import load, dump, YAMLError
+
+from homedns.updater import UpdaterConfig
+
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
 except ImportError:
     from yaml import Loader, Dumper
 
-UPDATER_COMMAND = 'updater'
+START_COMMAND = 'start'
 CONFIG_DUMP_COMMAND = 'config-dump'
 
 def file_exists(arg):
@@ -57,7 +60,7 @@ def main(argv=None):
     # /////////////////////////////////////////////////////////////////////////
     # /////////////////////////////////////////////////////////////////////////
 
-    server = subparsers.add_parser(UPDATER_COMMAND, help='Start Updater')
+    server = subparsers.add_parser(START_COMMAND, help='Start Updater')
     server.add_argument(
         '--config',
         metavar='PATH',
@@ -84,14 +87,12 @@ def main(argv=None):
 
     args = parser.parse_args(argv[1:])
 
-    if args.command == UPDATER_COMMAND:
-        pass
-        #server = UpdaterConfig(args.config)
-        #config = server.apply_defaults()
-        #config_main(config, DEFAULT_CONFIG_LEVEL if not args.debug else 'debug')
+    if args.command == START_COMMAND:
+        updater = UpdaterConfig(args.config)
+        updater_main(updater, DEFAULT_LOG_LEVEL if not args.debug else 'debug')
     elif args.command == CONFIG_DUMP_COMMAND:
-        config = args.config or yaml_file(DEFAULT_SERVER_CONFIG_PATH)
-        config = ServerConfig(config).apply_defaults()
+        config = args.config or yaml_file(DEFAULT_UPDATER_CONFIG_PATH)
+        config = UpdaterConfig(config).apply_defaults()
         if args.json:
             print(json.dumps(config, indent=4))
         else:

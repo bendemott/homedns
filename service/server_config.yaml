@@ -1,3 +1,5 @@
+# TODO - generate config from homedns during service install.
+# homedns-server create-config /etc/homedns/config.yaml
 http: null
   # listen: 80
 https:
@@ -47,5 +49,5 @@ dns: # DNS Server settings
   database:
     sqlite:
       path: "/etc/homedns/records.sqlite"
-  tld: 300 # how long records are valid for by default (never set lower than 30 seconds)
+  ttl: 300 # how long records are valid for by default (never set lower than 30 seconds)
   verbosity: 2 # 0 = no logging, 1 = basic dns logging,  2 = full dns query logging

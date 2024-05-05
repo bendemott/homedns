@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e # fail on first error
-if ! command -v homedns &> /dev/null
+if ! command -v homedns-server &> /dev/null
 then
-    echo "homedns is not installed or not on the path"
+    echo "homedns-server is not installed or not on the path, please install homedns first"
     exit 1
 fi
 
@@ -25,7 +25,7 @@ sudo chmod 640 /etc/homedns/auth_secrets.json
 sudo chmod 650 -R /etc/homedns/jwt_secrets
 
 # We want our service to be able to listen on port (443, and 53)
-sudo setcap 'cap_net_bind_service=+ep' $(which homedns)
+sudo setcap 'cap_net_bind_service=+ep' $(which homedns-server)
 sudo cp service/homedns.service /etc/systemd/system/
 sudo chown root:root /etc/systemd/system/homedns.service
 sudo chmod 644 /etc/systemd/system/homedns.service

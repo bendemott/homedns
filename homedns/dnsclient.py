@@ -1,6 +1,37 @@
 from twisted.internet import reactor
 from twisted.names import client, dns
 
+DNS_RECORD_MAP = {
+    "A": dns.A,
+    "NS": dns.NS,
+    "MD": dns.MD,
+    "MF": dns.MF,
+    "CNAME": dns.CNAME,
+    "SOA": dns.SOA,
+    "MB": dns.MB,
+    "MG": dns.MG,
+    "MR": dns.MR,
+    "NULL": dns.NULL,
+    "WKS": dns.WKS,
+    "PTR": dns.PTR,
+    "HINFO": dns.HINFO,
+    "MINFO": dns.MINFO,
+    "MX": dns.MX,
+    "TXT": dns.TXT,
+    "RP": dns.RP,
+    "AFSDB": dns.AFSDB,
+    "AAAA": dns.AAAA,
+    "SRV": dns.SRV,
+    "NAPTR": dns.NAPTR,
+    "A6": dns.A6,
+    "DNAME": dns.DNAME,
+    "OPT": dns.OPT,
+    "SSHFP": dns.SSHFP,
+    "SPF": dns.SPF,
+    "TKEY": dns.TKEY,
+    "TSIG": dns.TSIG,
+}
+
 
 class Container:
     def __init__(self, function, name: str, timeout: int):

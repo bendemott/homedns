@@ -3,10 +3,9 @@ Description=HomeDNS an api driven DNS server for dynamic DNS Root Authority
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/homedns-server
+ExecStart=/usr/local/bin/homedns-updater
 User=homedns
 Group=homedns
-AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 # Restart on failure
 Restart=always
@@ -14,7 +13,7 @@ Restart=always
 # Output to syslog
 StandardOutput=syslog
 StandardError=syslog
-SyslogIdentifier=homedns
+SyslogIdentifier=homedns-updater
 
 [Install]
 WantedBy=multi-user.target

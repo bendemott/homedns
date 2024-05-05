@@ -156,7 +156,7 @@ class ServerConfig(AbstractConfig):
                         "path": join(directory, "records.sqlite")
                     }
                 },
-                "tld": 300,
+                "ttl": 300,
                 "verbosity": 1
             }
         }

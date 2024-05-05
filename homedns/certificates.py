@@ -8,12 +8,18 @@ from twisted.logger import Logger
 
 
 @dataclass
-class KeyPairData:
+class CertPairData:
     key: bytes
     cert: bytes
 
 
-class KeyPair:
+@dataclass
+class KeyPairData:
+    private: bytes
+    public: bytes
+
+
+class CertPair:
     """
     Generate self-signed certificate pairs
     """
@@ -79,7 +85,7 @@ class KeyPair:
         self._valid_begin = valid_begin if valid_begin is not None else self._valid_end
         self._valid_end = valid_end or self._valid_end
 
-    def generate(self) -> KeyPairData:
+    def generate(self) -> CertPairData:
 
         # create a key pair
         key = crypto.PKey()
@@ -100,9 +106,9 @@ class KeyPair:
         cert.set_pubkey(key)
         cert.sign(key, self._digest)
 
-        return KeyPairData(
+        return CertPairData(
             key=crypto.dump_privatekey(crypto.FILETYPE_PEM, key),
-            cert=crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+            cert=crypto.dump_publickey(crypto.FILETYPE_PEM, cert)
         )
 
     def write(self, private_path: str, public_path: str):
@@ -119,3 +125,20 @@ class KeyPair:
         with open(public_path, "wb") as fp:
             fp.write(pair.cert)
             self.log.debug(f'CERTIFICATE CREATED:\n{pair.cert.decode()}')
+
+
+class KeyPair:
+    def __init__(self):
+        self._length = 4096
+
+    def options(self, length=4096):
+        self._length = length
+
+    def generate(self):
+        key = crypto.PKey()
+        key.generate_key(crypto.TYPE_RSA, 2048)
+
+        return KeyPairData(
+            private = crypto.dump_privatekey(crypto.FILETYPE_PEM, key),
+            public = crypto.dump_publickey(crypto.FILETYPE_PEM, key)
+        )

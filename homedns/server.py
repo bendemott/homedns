@@ -8,24 +8,27 @@ import sys
 
 from twisted.cred.portal import Portal
 from twisted.internet import reactor, ssl
-from twisted.names import dns, server, cache, resolve, client
-from twisted.python import log
-from twisted.web import guard
+from twisted.names import dns, server, cache, client
+from twisted.logger import Logger, textFileLogObserver
 from twisted.web._auth.basic import BasicCredentialFactory
 from twisted.web.server import Site
+#from twisted.python.log import startLogging
+from twisted.logger import globalLogBeginner
 
-from homedns.certificates import KeyPair
+from homedns.certificates import CertPair
+from homedns.config import ServerConfig
 from homedns.dnsserver import HomeDnsResolver
 from homedns.restapi import DNSRestApi
 from homedns.store import SqliteStorage, IRecordStorage
-from homedns.cred import JsonPasswordDB, PassthroughRealm
-from homedns.log import LevelObserver
-from homedns.jwt import JwtTokenChecker, JwtCredentialFactory
+from homedns.cred import JsonPasswordDB, PassthroughKleinRealm, RestAuthWrapper
+from homedns.jwt import JwtTokenChecker, JwtCredentialFactory, JwtFileCredentials
 
 
 def setup_dns(config: dict, store: IRecordStorage):
+    log = Logger('dns')
     clients = []
     if config['dns']['forwarding']['enabled']:
+        log.info(f"Enabling DNS Forwarding to: {config['dns']['forwarding']['servers']}")
         resolvers = []  # dns servers twisted expects pairs of (host, port)
         for s in config['dns']['forwarding']['servers']:
             if isinstance(s, str) and  ':' in s:
@@ -50,6 +53,7 @@ def setup_dns(config: dict, store: IRecordStorage):
     caches = []
     if config['dns']['cache']['enabled']:
         caches.append(cache.CacheResolver())
+        log.info('Enabling DNS Caching')
 
     factory = server.DNSServerFactory(
         authorities=[HomeDnsResolver(store)],
@@ -70,27 +74,35 @@ def secure_resource(config, resource):
     See this documentation for help understanding how this works:
     https://docs.twisted.org/en/twisted-18.9.0/web/howto/web-in-60/http-auth.html
     """
+    log = Logger('auth')
     if config.get('no_auth', {}).get('enabled'):
         return resource
 
     if config['basic_auth']['enabled']:
+        log.Logger.info("Securing REST with BASIC AUTH")
         checkers = [JsonPasswordDB(filename=config['basic_auth']['secrets_path'])]
-        wrapper = guard.HTTPAuthSessionWrapper(
-            Portal(PassthroughRealm(resource), checkers),
+        wrapper = RestAuthWrapper(
+            Portal(PassthroughKleinRealm(resource), checkers),
             [BasicCredentialFactory(b"homedns")])
         return wrapper
     elif config['jwt_auth']['enabled']:
-        checkers = [JwtTokenChecker]
-        wrapper = guard.HTTPAuthSessionWrapper(
-            Portal(PassthroughRealm(resource), checkers),
-            [JwtCredentialFactory(b"homedns")])
+        log.info("Securing REST with JWT AUTH")
+        credentials = JwtFileCredentials(config['jwt_auth']['subjects'])
+        log.info(f"Loaded subjects from: '{config['jwt_auth']['subjects']}'")
+        checkers = [JwtTokenChecker(audience=config['jwt_auth']['audience'],
+                                    issuer=config['jwt_auth']['issuer'],
+                                    leeway=config['jwt_auth']['leeway'],
+                                    algorithms=config['jwt_auth']['algorithms'])]
+        wrapper = RestAuthWrapper(
+            Portal(PassthroughKleinRealm(resource), checkers),
+            [JwtCredentialFactory(credentials)])
         return wrapper
     else:
         raise RuntimeError('authentication is not enabled')
 
 
 def setup_rest(config, store):
-    log.startLogging(sys.stdout)
+    log = Logger('rest')
 
     """
     The klein app is just a fancy resource under the hood.
@@ -101,15 +113,19 @@ def setup_rest(config, store):
     site = Site(resource)
 
     if config['http']:
+        log.info(f"HTTP Listening on {config['http']['listen']}")
         reactor.listenTCP(config['http']['listen'], site)
     if config['https']:
         private_key = config['https']['private_key']
         public_key = config['https']['public_key']
-        pair = KeyPair()
+        pair = CertPair()
         if not pair.exists(private_key, public_key) and config['https']['generate_keys']:
             pair.options(organization='homedns')
             # generate pair
             pair.write(private_key, public_key)
+            log.info(f'Generating self-signed server keys, {private_key}, {public_key}')
+
+        log.info(f"HTTPS Listening on {config['https']['listen']}, USING: {private_key}, {public_key}")
         ssl_context = ssl.DefaultOpenSSLContextFactory(
             private_key,  # Private Key
             public_key,   # Certificate
@@ -117,31 +133,21 @@ def setup_rest(config, store):
         reactor.listenSSL(config['https']['listen'], site, ssl_context)
 
 
-def config_main(config: dict, log_level: str = 'info'):
-    log.startLogging(sys.stdout)
-    #log.addObserver(LevelObserver(log_level))  # TODO is hiding exceptions
+def server_main(reader: ServerConfig, log_level: str = 'info'):
+    log = Logger()
+    globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)], False, True)
 
-    sqlite_path = config.get('dns', {}).get('database', {}).get('sqlite', {}).get('path')
+    log.info(f'Starting Server - Config: "{reader.path}"')
+    #log.addObserver(LevelObserver(log_level))  # TODO is hiding exceptions
+    conf = reader.config
+    sqlite_path = conf.get('dns', {}).get('database', {}).get('sqlite', {}).get('path')
     if not sqlite_path:
         raise ValueError(f'Configuration missing: `dns.database.sqlite.path`')
 
     store = SqliteStorage(sqlite_path)
-    setup_dns(config, store)
-    setup_rest(config, store)
+    setup_dns(conf, store)
+    setup_rest(conf, store)
 
-    try:
-        reactor.run()
-    except KeyboardInterrupt:
-        pass
+    log.info('Starting Server')
+    reactor.run()
 
-
-def main(argv=None):
-    log.startLogging(sys.stdout)
-    argv = argv or ['']
-
-
-
-
-
-if __name__ == '__main__':
-    raise sys.exit(main(sys.argv))

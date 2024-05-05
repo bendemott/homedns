@@ -1,11 +1,13 @@
 import json
 import ssl
+import textwrap
 from abc import ABC, abstractmethod
 from base64 import b64encode
 from datetime import datetime, timezone, timedelta
 import urllib.request
 from urllib.parse import urlunparse, urlencode
 from typing import Any
+from urllib.error import HTTPError, URLError
 
 from homedns import __version__
 
@@ -53,7 +55,7 @@ class ClientAuthentication(ABC):
 
     @abstractmethod
     def get_headers(self) -> dict[str, str]:
-        pass
+        raise NotImplemented()
 
 
 class JwtAuthenticationRS256(ClientAuthentication):
@@ -89,7 +91,7 @@ class JwtAuthenticationRS256(ClientAuthentication):
         return jwt.encode(payload, self.private_key, algorithm="RS256")
 
     def get_headers(self) -> dict[str, str]:
-        return {'Authorization': f'Bearer {self.get_token()}'}
+        return {'authorization': f'Bearer {self.get_token()}'}
 
 
 class BasicAuthentication(ClientAuthentication):
@@ -98,8 +100,12 @@ class BasicAuthentication(ClientAuthentication):
         self._password = password
 
     def get_headers(self) -> dict[str, str]:
+        """
+        Get authorization headers for basic authentication
+        - Returns a 'Authorization' header
+        """
         token = b64encode(f"{self._username}:{self._password}".encode('utf-8')).decode("ascii")
-        return {'Authorization': f'Basic {token}'}
+        return {'authorization': f'Basic {token}'}
 
 
 class Client:
@@ -113,8 +119,6 @@ class Client:
     - dns.AAAA
     - dns.CNAME
     - dns.MX
-
-    TODO: add error handling
     """
 
     def __init__(self, server: str, credentials: ClientAuthentication = None, https=True, verify=True):
@@ -125,9 +129,12 @@ class Client:
         if https:
             self._context = ssl.create_default_context()
             self._context.check_hostname = verify
-            self._context.verify_mode = ssl.VERIFY_X509_PARTIAL_CHAIN if verify else ssl.CERT_NONE
+            self._context.verify_mode = ssl.CERT_REQUIRED if verify else ssl.CERT_NONE
         else:
             self._context = None
+
+        if not isinstance(credentials, ClientAuthentication):
+            raise ValueError(f'invalid credentials argument: {type(credentials)}')
 
     def auth_headers(self):
         return self._credentials.get_headers()
@@ -146,6 +153,7 @@ class Client:
         headers.update({'Accept-Encoding': 'gzip, deflate'})
         headers.update({'Accept': 'application/json'})
         headers.update({'User-Agent': f'HomeDNS Client ({__version__})'})
+        assert 'authorization' in headers
         return headers
 
     def add_headers(self, request):
@@ -158,9 +166,15 @@ class Client:
         HTTP GET, for fetching
         """
         url = self.url(uri, params)
-        request = urllib.request.urlopen(url, context=self._context)
-        self.add_headers(request)
-        return json.loads(request.read())
+        request = urllib.request.Request(url, headers=self.get_headers(), method='GET')
+        response = urllib.request.urlopen(request, context=self._context)
+        raw = response.read()
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'Invalid response from "{url}"\n{raw}\n{e}') from e
 
     def put(self, uri: str, data: dict[Any, Any]):
         """
@@ -170,7 +184,13 @@ class Client:
         data = json.dumps(data).encode()  # bytes
         request = urllib.request.Request(url, data, headers=self.get_headers(), method='PUT')
         response = urllib.request.urlopen(request, context=self._context)
-        return json.loads(response.read())
+        raw = response.read()
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'Invalid response from "{url}"\n{raw}\n{e}') from e
 
     def post(self, uri: str, data: dict[Any, Any]):
         """
@@ -178,9 +198,15 @@ class Client:
         """
         url = self.url(uri)
         data = json.dumps(data).encode()  # bytes
-        request = urllib.request.urlopen(url, data, context=self._context)
-        self.add_headers(request)
-        return json.loads(request.read())
+        request = urllib.request.Request(url, data, headers=self.get_headers(), method='POST')
+        response = urllib.request.urlopen(request, context=self._context)
+        raw = response.read()
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'Invalid response from "{url}"\n{raw}\n{e}') from e
 
     def delete(self, uri: str, params: dict[str, str] = None):
         """
@@ -189,9 +215,15 @@ class Client:
         url = self.url(uri, params)
         request = urllib.request.Request(url, headers=self.get_headers(), method='DELETE')
         response = urllib.request.urlopen(request, context=self._context)
-        return json.loads(response.read())
+        raw = response.read()
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'Invalid response from "{url}"\n{raw}\n{e}') from e
 
-    def update_a_record(self, hostname, address, ttl):
+    def update_a_record(self, hostname: str, address: str, ttl: int):
         """
         Update address of record with `hostname`
         Note that multiple A records can be associated with a single hostname.
@@ -203,37 +235,66 @@ class Client:
         :param address: The address that will be set on record with hostname
         :param ttl: update interval of the dns record
         """
-        return self.put(f'/a/update', {'hostname': hostname, 'address': address, 'ttl': ttl})
+        return self.put(f'/update/a/{hostname}', {'address': address, 'ttl': ttl})
 
-    def create_a_record(self, hostname, address, ttl):
+    def create_a_record(self, hostname: str, address: str, ttl: int):
         """
         Create a hostname record
         """
-        return self.post('/a/create', {'hostname': hostname, 'address': address, 'ttl': ttl})
+        return self.post(f'/create/a/{hostname}', {'address': address, 'ttl': ttl})
 
-    def upsert_a_record(self, hostname, address, ttl):
-        return self.put('/a/upsert', {'hostname': hostname, 'address': address, 'ttl': ttl})
+    def upsert_a_record(self, hostname: str, address: str, ttl: int):
+        assert isinstance(hostname, str)
+        assert isinstance(address, str)
+        assert isinstance(ttl, int)
+        return self.put(f'/upsert/a/{hostname}', {'address': address, 'ttl': ttl})
 
-    def get_a_by_hostname(self, hostname):
+    def delete_a_by_hostname(self, hostname: str):
+        return self.delete(f'/hostname/a/{hostname}')
+
+    def get_a_by_hostname(self, hostname: str):
         """
         Return A records by hostname
         """
-        return self.get(f'/a/hostname/{hostname}')
+        return self.get(f'/hostname/a/{hostname}')
 
     def get_cname_by_hostname(self, hostname):
         """
         Return A records by hostname
         """
-        return self.get(f'/cname/hostname/{hostname}')
+        return self.get(f'/hostname/cname/{hostname}')
 
     def delete_records_by_hostname(self, hostname, record_type=None):
-        return self.delete('/hostname', {'hostname': hostname, 'type': record_type})
+        return self.delete(f'/hostname/{hostname}', {'type': record_type})
 
     def delete_records_by_address(self, address, record_type=None):
-        return self.delete('/address', {'address': address, 'type': record_type})
+        return self.delete(f'/address/{address}', {'type': record_type})
 
     def search_address(self, address, record_type=None):
-        return self.get('/search/address', {'address': address, 'type': record_type})
+        return self.get(f'/search/address/{address}', {'address': address, 'type': record_type})
 
-    def search_hostname(self, hostname, record_type=None):
-        return self.get('/search/hostname', {'hostname': hostname, 'type': record_type})
+    def echo_ip4(self):
+        """
+        Echo back my ip address to me
+        """
+        return self.get('/ip4')
+
+    @staticmethod
+    def pretty_headers(headers: dict):
+        pretty = []
+        width = max([len(str(h)) for h in headers] or [0])
+        for name, value in headers.items():
+            pretty.append(f'{name.ljust(width)}: {value}')
+        return '\n'.join(pretty)
+
+    @classmethod
+    def pretty_error(cls, error: HTTPError):
+        headers = cls.pretty_headers(error.headers) or '(No response headers)'
+        headers = textwrap.indent(headers, ' ' * 4)
+        text = textwrap.dedent(f"""
+            API Error [{error.code} {error.msg}]
+            URL: {error.url}
+            Response Headers:
+            %s
+        """) % headers
+        return text

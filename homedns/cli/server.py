@@ -7,7 +7,7 @@ import argparse
 from os.path import isfile
 import json
 
-from homedns.server import config_main
+from homedns.server import server_main
 from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_LOG_LEVEL
 from homedns.config import ServerConfig
 from homedns.cli.common import file_exists
@@ -18,8 +18,7 @@ try:
 except ImportError:
     from yaml import Loader, Dumper
 
-SERVER_COMMAND = 'server'
-UPDATER_COMMAND = 'updater'
+START_COMMAND = 'start'
 CONFIG_DUMP_COMMAND = 'config-dump'
 CONFIG_TEMPLATE_COMMAND = 'config-template'
 
@@ -38,7 +37,7 @@ def main(argv=None):
     # /////////////////////////////////////////////////////////////////////////
 
     subparsers = parser.add_subparsers(dest='command')
-    server = subparsers.add_parser(SERVER_COMMAND, help='Start Server')
+    server = subparsers.add_parser(START_COMMAND, help='Start Server')
     server.add_argument(
         '--config',
         metavar='PATH',
@@ -65,11 +64,9 @@ def main(argv=None):
 
     args = parser.parse_args(argv[1:])
 
-    if args.command == SERVER_COMMAND:
+    if args.command == START_COMMAND:
         server = ServerConfig(args.config)
-        config_main(server.config, DEFAULT_LOG_LEVEL if not args.debug else 'debug')
-    elif args.command == UPDATER_COMMAND:
-        raise NotImplemented()
+        server_main(server, DEFAULT_LOG_LEVEL if not args.debug else 'debug')
     elif args.command == CONFIG_DUMP_COMMAND:
         config = ServerConfig()
         if args.json:
