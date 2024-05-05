@@ -1,10 +1,13 @@
 import collections.abc
 import copy
+import pathlib
+import shutil
 from abc import ABC, abstractmethod
-from os.path import join, dirname, getmtime
+from os.path import join, dirname, getmtime, isfile
 import os
 from typing import Any
 
+from twisted.logger import Logger
 from twisted.names import dns
 from yaml import load, dump
 try:
@@ -15,10 +18,114 @@ except ImportError:
 from homedns.constants import DEFAULT_SERVER_CONFIG_PATH, DEFAULT_NAME_SERVERS
 
 
+class ServerRuntime:
+    runtime = None
+
+    @classmethod
+    def get_runtime_config(cls):
+        return cls.runtime
+
+    @classmethod
+    def set_runtime_config(cls):
+        return cls.runtime
+
+
+def set_file_permissions(path, mode=None, owner=None, group=None):
+    """
+    Configure a files permissions and ownership
+
+    :param path: File to configure permissions for
+    :param mode: File permissions mode, 0o640
+    :param owner: Set explicit owner of the file, default is the parent directory owner
+    :param group: Set explicit group of the file, default is the parent directory group
+
+    some configurations can create themselves and initialize themselves.
+    The authentication configurations (JWT, Basic Auth) are examples of this.
+    They just need to be empty files so when you interact with them the program either knows
+    "hey these are empty files with no config" .... or,... they aren't empty, and the server needs to
+    read the file during execution.
+
+    So how do we know what the file permissions should be. Here's a fairly big, but hopefully pretty safe
+    assumption. You can customize the config concrete configuration class so it passes an
+    explicit user / group.
+    But the default behavior will be thus.
+    IF the parent directory user/group is set, and is different than this files user/group
+    (possibly because root / sudo was used to create the file) we will CHANGE the files
+    permissions to match that of the PARENT DIRECTORY.
+
+    This means that no matter where the installation resides, as long as the owner/group on the installation
+    directory is set for the user you intend to run homedns as, this file will get consistent permissions and be
+    able to be reliably read by the server process.
+    """
+    log = Logger('permissions')
+
+    set_owner = None
+    set_group = None
+
+    try:
+        conf = pathlib.Path(path)
+        directory = conf.resolve().parents[0]
+        current_owner = conf.owner()
+        current_group = conf.group()
+    except PermissionError as e:
+        log.error(f'{e.__class__.__name__} - Unable to read owner/group permissions "{path}", '
+                        f'Error: {e}')
+        # nothing more to do
+        return
+    except FileNotFoundError as e:
+        log.error(f'{e.__class__.__name__} - Unable to read owner/group permissions "{path}", '
+                        f'Error: {e} - It is expected that the file exists before attempting to set permissions')
+        return
+
+    if owner and current_owner != owner:
+        # an explicit owner was given
+        set_owner = owner
+    elif not owner and directory.owner() != current_owner:
+        # make the file ownership match that of the parent directory
+        set_owner = directory.owner()
+
+    if group and current_group != group:
+        # an explicit group was given
+        set_group = group
+    elif not group and directory.group() != current_group:
+        # make the file group match that of the parent directory
+        set_group = directory.group()
+
+    if set_owner or set_group:
+        try:
+            shutil.chown(path, user=set_owner, group=set_group)
+            log.info(f'Changed file ownership: "{path}", owner: {set_owner or "no change"}, '
+                           f'group: {set_group or "no change"}')
+        except PermissionError as e:
+            log.error(f'{e.__class__.__name__} - Unable to set owner/group permissions "{path}", '
+                            f'current owner: {current_owner}, current group: {current_group}\n'
+                            f'Error: {e}')
+            return
+
+    current_mode = conf.stat().st_mode
+    current_octal = oct(current_mode & 0o777)
+
+    short_mode = int(oct(mode)[2:])
+    if short_mode > 777 or short_mode < 400:
+        raise ValueError(f'Illogical file permission: [{short_mode}], valid range is 777 to 400')
+
+    if mode and mode != current_octal:
+        try:
+            conf.chmod(mode)  # chmod(0o444)
+            log.info(f'Changed file permissions: "{path}" previous: {current_octal[2:]}, '
+                           f'new: {short_mode}')
+        except PermissionError as e:
+            log.error(f'Unable to change file permissions: "{path}" previous: {current_octal[2:]}, '
+                            f'new: {short_mode}, Error: {str(e)}')
+            return
+
+
 class AbstractConfig(ABC):
     """
     Generic yaml configuration with convenience methods
     """
+    _log = Logger()
+
     def __init__(self, path: str):
         self._modify_time = 0
         self._path = None
@@ -54,6 +161,29 @@ class AbstractConfig(ABC):
         Reload configuration from file
         """
         self.load_file(self._path)
+
+    def set_permissions(self, path, mode=None, owner=None, group=None):
+        """
+        :param path: File to configure permissions for
+        :param mode: File permissions mode, 0o640
+        :param owner: Set explicit owner of the file, default is the parent directory owner
+        :param group: Set explicit group of the file, default is the parent directory group
+        """
+        set_file_permissions(path, mode, owner, group)
+
+    def initialize_file(self, path, contents=''):
+        """
+        Initialize the configuration if the path doesn't exist
+        Some configurations need to be empty files to be used correctly.
+        """
+        try:
+            if not isfile(path):
+                with open(path, 'w') as fp:
+                    fp.write(contents)
+        except PermissionError as e:
+            self._log.error(f'{e.__class__.__name__} - Unable to read or initialize configuration at "{path}", '
+                            f'Error: {e}')
+            return
 
     def load_file(self, path):
         """

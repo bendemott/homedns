@@ -3,7 +3,8 @@ Description=HomeDNS an api driven DNS server for dynamic DNS Root Authority
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/homedns-server
+Type=simple
+ExecStart=/usr/local/bin/homedns-server start
 User=homedns
 Group=homedns
 AmbientCapabilities=CAP_NET_BIND_SERVICE

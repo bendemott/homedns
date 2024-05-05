@@ -31,6 +31,6 @@ fi
 
 # install from git
 echo "Installing from: git+https://github.com/bendemott/homedns.git"
-sudo pip3 install git+https://github.com/bendemott/homedns.git --break-system-packages
+sudo pip3 install git+https://github.com/bendemott/homedns.git --upgrade --break-system-packages
 
 echo "Done!"

@@ -28,7 +28,7 @@ from twisted.cred import error
 from zope.interface import implementer
 from OpenSSL import crypto
 
-from homedns.config import AbstractConfig
+from homedns.config import AbstractConfig, set_file_permissions
 from homedns.constants import DEFAULT_JWT_SUBJECTS_PATH
 
 AUDIENCE_KEY = 'aud'  # audience
@@ -85,10 +85,15 @@ class JwtFileCredentials(AbstractConfig):
     CREATED_KEY = 'created'
     CERTIFICATE_CONTENTS = 'certificate'
     CERTIFICATE_PATH = 'certificate_path'
+    DEFAULT_MODE = 0o640
 
     def __init__(self, path: str = DEFAULT_JWT_SUBJECTS_PATH):
         # create the file if it doesn't exist
-        open(path, 'a').close()
+        self._log = Logger(self.__class__.__name__)
+
+        self.initialize_file(path, contents='')
+        self.set_permissions(path, mode=self.DEFAULT_MODE)
+
         # super will do the work
         super().__init__(path)
 
@@ -124,6 +129,8 @@ class JwtFileCredentials(AbstractConfig):
         cred_path = self.create_certificate_path(subject_name)
         with open(cred_path, 'wb') as fp:
             fp.write(contents)
+
+        set_file_permissions(cred_path, mode=0o640)
 
         return cred_path
 

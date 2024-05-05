@@ -13,7 +13,6 @@ sudo groupadd -f homedns
 # Create default config and directories
 sudo mkdir -p /etc/homedns
 sudo mkdir -p /etc/homedns/jwt_secrets
-sudo cp --no-clobber service/server_config.yaml /etc/homedns/config.yaml
 if [[ ! -e /etc/homedns/config.yaml ]]; then
     # have the application write a default config out (will not overwrite existing configs)
     sudo homedns-server config-dump --save-to-default
@@ -23,10 +22,16 @@ if [[ ! -e /etc/homedns/auth_secrets.json ]]; then
     sudo echo "{}" >> /etc/homedns/auth_secrets.json
 fi
 
+if [[ ! -e /etc/homedns/auth_secrets.json ]]; then
+    sudo touch /etc/homedns/jwt_secrets/jwt_subjects.yaml
+fi
+
+
 sudo chown -R homedns:homedns /etc/homedns
 sudo chmod 644 -R /etc/homedns/config.yaml
 sudo chmod 640 /etc/homedns/auth_secrets.json
-sudo chmod 650 -R /etc/homedns/jwt_secrets
+sudo chmod 640 /etc/homedns/jwt_secrets/jwt_subjects.yaml
+sudo chmod 770 -R /etc/homedns/jwt_secrets
 
 # We want our service to be able to listen on port (443, and 53)
 sudo setcap 'cap_net_bind_service=+ep' $(which homedns-server)

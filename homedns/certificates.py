@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from OpenSSL import crypto
 from twisted.logger import Logger
 
+from homedns.config import set_file_permissions
+
 
 @dataclass
 class CertPairData:
@@ -108,7 +110,7 @@ class CertPair:
 
         return CertPairData(
             key=crypto.dump_privatekey(crypto.FILETYPE_PEM, key),
-            cert=crypto.dump_publickey(crypto.FILETYPE_PEM, cert)
+            cert=crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
         )
 
     def write(self, private_path: str, public_path: str):
@@ -125,6 +127,9 @@ class CertPair:
         with open(public_path, "wb") as fp:
             fp.write(pair.cert)
             self.log.debug(f'CERTIFICATE CREATED:\n{pair.cert.decode()}')
+
+        set_file_permissions(private_path, mode=0o640)
+        set_file_permissions(public_path, mode=0o640)
 
 
 class KeyPair:

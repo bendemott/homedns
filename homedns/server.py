@@ -5,6 +5,7 @@ Custom DNS Server
     172.0.2.1
 """
 import sys
+import traceback
 
 from twisted.cred.portal import Portal
 from twisted.internet import reactor, ssl
@@ -122,8 +123,19 @@ def setup_rest(config, store):
         if not pair.exists(private_key, public_key) and config['https']['generate_keys']:
             pair.options(organization='homedns')
             # generate pair
-            pair.write(private_key, public_key)
-            log.info(f'Generating self-signed server keys, {private_key}, {public_key}')
+            try:
+                pair.write(private_key, public_key)
+            except Exception as e:
+                log.error(f'Unable to generate self-signed HTTPS certificate - {str(e)}')
+                log.debug(traceback.format_exc(limit=10))
+            else:
+                log.info(f'Generated self-signed server keys, {private_key}, {public_key}')
+
+        # Show errors and skip startup if certificates missing
+        if not pair.exists(private_key, public_key):
+            log.error(f"server missing HTTPS certificates, skipping REST server startup\n"
+                      f"Add PEM certificates at: {private_key}, {public_key} to resolve this error")
+            return
 
         log.info(f"HTTPS Listening on {config['https']['listen']}, USING: {private_key}, {public_key}")
         ssl_context = ssl.DefaultOpenSSLContextFactory(
@@ -146,7 +158,11 @@ def server_main(reader: ServerConfig, log_level: str = 'info'):
 
     store = SqliteStorage(sqlite_path)
     setup_dns(conf, store)
-    setup_rest(conf, store)
+
+    try:
+        setup_rest(conf, store)
+    except Exception as e:
+        log.error(f'HTTP server failed to start, continuing with DNS services, error: {str(e)}')
 
     log.info('Starting Server')
     reactor.run()
