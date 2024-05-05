@@ -18,6 +18,8 @@ from tabulate import tabulate
 
 __all__ = ['DnsRecordData', 'HostnameAndRecord', 'AddressAndRecord', 'IRecordStorage', 'SqliteStorage']
 
+from twisted.names.error import DNSServerError, DNSNotImplementedError
+
 
 @dataclass
 class DnsRecordData:
@@ -129,8 +131,9 @@ class SqliteStorage(IRecordStorage):
             table = cursor.fetchone()
             dropped = False
             if table and table[1] != 'SQL':
+                pass
                 # table structure has changed, drop it so the program can use its current structure
-                self.log.warning(f'table DDL has changed, DROP TABLE {table[0]}')
+                # self.log.warning(f'table DDL has changed, DROP TABLE {table[0]}') # TODO fix me
                 #conn.execute(f'DROP TABLE {table[0]}')
                 #conn.commit()
                 #dropped = True
@@ -173,7 +176,7 @@ class SqliteStorage(IRecordStorage):
         :param record_type: a value like `dns.A`, `dns.CNAME`, `dns.MX`, etc.
         """
         if record_type not in dns.QUERY_TYPES:
-            raise ValueError(f'not a valid record type constant: {record_type}')
+            raise DNSServerError(f'not a valid record type constant: {record_type}')
 
         conn = self.initialize()
 
@@ -187,7 +190,7 @@ class SqliteStorage(IRecordStorage):
             try:
                 sql_args.append(self.RECORD_MAP[record_type].__name__)
             except KeyError as e:
-                raise ValueError(f'Unsupported record type: "{dns.QUERY_TYPES.get(record_type)}" [{record_type}]')
+                raise DNSNotImplementedError(f'Unsupported record type: "{dns.QUERY_TYPES.get(record_type)}" [{record_type}]')
 
         records = []
 

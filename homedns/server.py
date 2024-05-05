@@ -1,5 +1,5 @@
 """
-Custom DNS Server
+Custom DNS and HTTP Server
 
     $ dig -p 10053 @localhost workstation1.example.com A +short
     172.0.2.1
@@ -8,12 +8,11 @@ import sys
 import traceback
 
 from twisted.cred.portal import Portal
-from twisted.internet import reactor, ssl
+from twisted.internet import reactor, ssl, defer
 from twisted.names import dns, server, cache, client
 from twisted.logger import Logger, textFileLogObserver
 from twisted.web._auth.basic import BasicCredentialFactory
 from twisted.web.server import Site
-#from twisted.python.log import startLogging
 from twisted.logger import globalLogBeginner
 
 from homedns.certificates import CertPair
@@ -49,6 +48,7 @@ def setup_dns(config: dict, store: IRecordStorage):
         if not resolvers:
             raise ValueError(f'Invalid configuration, value required: `dns.forwarding.servers`')
 
+        log.debug(f'Configuring DNS Server with forwarding resolvers: {resolvers}')
         clients.append(client.Resolver(servers=resolvers))
 
     caches = []
@@ -60,7 +60,7 @@ def setup_dns(config: dict, store: IRecordStorage):
         authorities=[HomeDnsResolver(store)],
         caches=caches,
         clients=clients,
-        verbose=int(config.get('verbosity', 0))
+        verbose=int(config['dns']['verbosity'])
     )
     protocol = dns.DNSDatagramProtocol(controller=factory)
     reactor.listenUDP(int(config['dns']['listen_udp']), protocol)
@@ -146,8 +146,13 @@ def setup_rest(config, store):
 
 
 def server_main(reader: ServerConfig, log_level: str = 'info'):
+
     log = Logger()
     globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)], False, True)
+
+    # enable callback debugging
+    if log_level == 'debug':
+        defer.setDebugging(True)
 
     log.info(f'Starting Server - Config: "{reader.path}"')
     #log.addObserver(LevelObserver(log_level))  # TODO is hiding exceptions

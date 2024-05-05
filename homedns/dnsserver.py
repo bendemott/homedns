@@ -1,8 +1,10 @@
 from typing import Iterator
 
-from twisted.internet import threads
+from twisted.internet import threads, defer
+from twisted.internet.defer import inlineCallbacks
 from twisted.names import dns, error, common
 from twisted.logger import Logger
+from twisted.names.dns import Query
 
 from homedns.store import IRecordStorage, HostnameAndRecord
 
@@ -18,12 +20,14 @@ class HomeDnsResolver(common.ResolverBase):
         self.log = Logger(self.__class__.__name__)
         self._tld = tld
         self._forwarding = forwarding
+        common.ResolverBase.__init__(self)
 
     @property
     def store(self):
         return self._store
 
-    async def query(self, query, timeout=None):
+    @inlineCallbacks
+    def query(self, query: Query, timeout=None):
         """
         Notice that this method returns a Deferred.
         On success, it returns three lists of DNS records (answers, authority, additional),
@@ -40,17 +44,23 @@ class HomeDnsResolver(common.ResolverBase):
             raise error.DNSNotImplementedError()
 
         # we have to defer to thread because our storage api is NOT async (its blocking)
-        results: Iterator[HostnameAndRecord] = await threads.deferToThread(self.store.name_search,
+        results: Iterator[HostnameAndRecord] = yield threads.deferToThread(self.store.name_search,
                                                                            query.name.name.decode(),
                                                                            query.type)
-        await threads.deferToThread(self.store.log_table)
 
-        answers = [dns.RRHeader(name=d.hostname, payload=d.record, ttl=d.record.ttl) for d in results]
-        authority = [dns.RRHeader(name=d.hostname, payload=d.record, ttl=d.record.ttl, auth=True) for d in results]  # dns.RRHeader
-        additional = []  # dns.RRHeader
+        # answers, is all you need to populate. By adding `auth=True` to the RRHeader the returned record will
+        # indicate it is authoritative. We respond as the authority for all records we house
+        answers: list[dns.RRHeader] = [
+            dns.RRHeader(name=d.hostname, payload=d.record, ttl=d.record.ttl, auth=True) for d in results]
+        authority: list[dns.RRHeader] = []
+        additional: list[dns.RRHeader] = []
 
-        # we have no answers for this hostname
-        if not answers:
+        """
+        If the server is configured with the option to forward queries, the next resolver class
+        will handle the query. By returning `DomainError` we are indicating to twisted that this resolver
+        cannot answer the dns query, and others should be tried
+        """
+        if not results:
             raise error.DomainError()
 
-        return answers, authority, additional
+        defer.returnValue((answers, authority, additional))
