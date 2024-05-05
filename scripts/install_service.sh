@@ -14,8 +14,12 @@ sudo groupadd -f homedns
 sudo mkdir -p /etc/homedns
 sudo mkdir -p /etc/homedns/jwt_secrets
 sudo cp --no-clobber service/server_config.yaml /etc/homedns/config.yaml
+if [[ ! -e /etc/homedns/config.yaml ]]; then
+    # have the application write a default config out (will not overwrite existing configs)
+    sudo homedns-server config-dump --save-to-default
+fi
+
 if [[ ! -e /etc/homedns/auth_secrets.json ]]; then
-    mkdir -p /Scripts
     sudo echo "{}" >> /etc/homedns/auth_secrets.json
 fi
 

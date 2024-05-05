@@ -7,10 +7,12 @@ then
     exit 1
 fi
 
+sudo apt update
+
+# ====== pip3 ===========================================
 if ! command -v pip3 &> /dev/null
 then
-  wget https://pip.pypa.io/en/stable/installation/#get-pip-py
-  sudo python3 get-pip.py
+  sudo apt install python3-pip -y
 fi
 
 
@@ -20,11 +22,15 @@ then
     exit 1
 fi
 
+# ====== git ============================================
+if ! command -v git &> /dev/null
+then
+  sudo apt install git -y
+fi
+
+
 # install from git
 echo "Installing from: git+https://github.com/bendemott/homedns.git"
-sudo pip3 install git+https://github.com/bendemott/homedns.git
-
-# cleanup
-sudo rm -f get-pip.py || true
+sudo pip3 install git+https://github.com/bendemott/homedns.git --break-system-packages
 
 echo "Done!"

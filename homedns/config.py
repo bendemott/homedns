@@ -60,9 +60,12 @@ class AbstractConfig(ABC):
         Load yaml configuration from file
         """
         self._path = path
-        self._modify_time = getmtime(path)
-        # an empty file will load to None
-        self._config = load(open(path, 'r'), Loader) or {}
+        try:
+            self._modify_time = getmtime(path)
+            self._config = load(open(path, 'r'), Loader) or {}  # an empty file will load to None
+        except FileNotFoundError:
+            self._modify_time = 0
+            self._config = {}
         self.apply_defaults(self.get_default(dirname(path)))
 
     @abstractmethod

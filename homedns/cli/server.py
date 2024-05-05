@@ -23,6 +23,29 @@ CONFIG_DUMP_COMMAND = 'config-dump'
 CONFIG_TEMPLATE_COMMAND = 'config-template'
 
 
+def config_dump(args):
+    config = ServerConfig()
+    if args.json:
+        contents = json.dumps(config.config, indent=4)
+    else:
+        contents = str(config)
+
+    if args.save:
+        if not isfile(args.save) or args.overwrite:
+            with open(args.save, 'w') as fp:
+                fp.write(contents)
+                print(f'Configuration written to: "{args.save}"')
+        else:
+            print(f'Configuration already exists at "{args.save}", use --overwrite to replace')
+
+    if args.save_to_default:
+        if not isfile(DEFAULT_SERVER_CONFIG_PATH) or args.overwrite:
+            with open(DEFAULT_SERVER_CONFIG_PATH, 'w') as fp:
+                fp.write(contents)
+                print(f'Configuration written to: "{DEFAULT_SERVER_CONFIG_PATH}"')
+        else:
+            print(f'Configuration already exists at "{DEFAULT_SERVER_CONFIG_PATH}", use --overwrite to replace')
+
 def main(argv=None):
     argv = argv or sys.argv
 
@@ -53,13 +76,31 @@ def main(argv=None):
     server.add_argument(
         '--config',
         metavar='PATH',
-        help=f'Config path',
+        help=f'Config path, if not specified the default configuration is returned',
         type=file_exists
     )
     server.add_argument(
         '--json',
         action='store_true',
-        help=f'format as json'
+        help=f'format as JSON instead of Yaml (default)'
+    )
+
+    server.add_argument(
+        '--save',
+        metavar='PATH',
+        help=f'Save the configuration to this path'
+    )
+
+    server.add_argument(
+        '--save-to-default',
+        action='store_true',
+        help=f'Save the configuration to the default application path: "{DEFAULT_SERVER_CONFIG_PATH}"'
+    )
+
+    server.add_argument(
+        '--overwrite',
+        action='store_true',
+        help=f'Overwrite a file that already exists when using --save or --save-to-default'
     )
 
     args = parser.parse_args(argv[1:])
@@ -68,11 +109,7 @@ def main(argv=None):
         server = ServerConfig(args.config)
         server_main(server, DEFAULT_LOG_LEVEL if not args.debug else 'debug')
     elif args.command == CONFIG_DUMP_COMMAND:
-        config = ServerConfig()
-        if args.json:
-            print(json.dumps(config.config, indent=4))
-        else:
-            print(str(config))
+        config_dump(args)
 
 
 if __name__ == '__main__':
