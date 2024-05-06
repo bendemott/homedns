@@ -87,7 +87,8 @@ class HomeDnsResolver(common.ResolverBase):
         if query.type not in dns.QUERY_TYPES:
             # modern browsers ask for type 65, HTTPS RESOURCE REQUEST as an example of an unavoidable unsupported
             # request type...
-            raise error.AuthoritativeDomainError(f'Unsupported query type: {query.type}')  # error.DNSNotImplementedError()
+            # raise error.AuthoritativeDomainError(f'Unsupported query type: {query.type}')  # error.DNSNotImplementedError()
+            return [[], [], []]
 
         # we have to defer to thread because our storage api is NOT async (its blocking)
         try:
