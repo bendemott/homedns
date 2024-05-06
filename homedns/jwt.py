@@ -91,8 +91,8 @@ class JwtFileCredentials(AbstractConfig):
         # create the file if it doesn't exist
         self._log = Logger(self.__class__.__name__)
 
-        self.initialize_file(contents='')
-        self.set_permissions(mode=self.DEFAULT_MODE)
+        self.initialize_file(path, contents='')
+        self.set_permissions(path, mode=self.DEFAULT_MODE)
 
         # super will do the work
         super().__init__(path)

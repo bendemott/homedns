@@ -162,27 +162,20 @@ class AbstractConfig(ABC):
         """
         self.load_file(self._path)
 
-    def set_permissions(self, mode: int, owner: str = None, group: str = None):
+    def set_permissions(self, path: str, mode: int, owner: str = None, group: str = None):
         """
-        Set permissions on the configuration on-disk file
-
+        :param path: File to configure permissions for
         :param mode: File permissions mode, 0o640
         :param owner: Set explicit owner of the file, default is the parent directory owner
         :param group: Set explicit group of the file, default is the parent directory group
         """
-        set_file_permissions(self._path, mode, owner, group)
+        set_file_permissions(path, mode, owner, group)
 
-    def initialize_file(self, contents: str = ''):
+    def initialize_file(self, path: str, contents: str = ''):
         """
         Initialize the configuration if the path doesn't exist
         Some configurations need to be empty files to be used correctly.
-
-        This method is not called automatically, its up to the implementation if it wants a defaulted
-        configuration when one does not exist.
-
-        :param contents: The initial contents of the file
         """
-        path = self.path
         try:
             if not path or not isfile(path):
                 with open(path, 'w') as fp:
