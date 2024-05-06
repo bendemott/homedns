@@ -41,7 +41,7 @@ class HomeDnsResolver(common.ResolverBase):
             self._soa_sizes.add(len(soa_tuple))
             self._soa.add(soa_tuple)
 
-        self._soa_min = min(self._soa_sizes)
+        self._soa_min = min(self._soa_sizes or [0])
 
     def is_soa_domain(self, name: str) -> bool:
         """
