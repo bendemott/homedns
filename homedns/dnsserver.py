@@ -103,7 +103,8 @@ class HomeDnsResolver(common.ResolverBase):
         # indicate it is authoritative. We respond as the authority for all records we house
         answers: list[dns.RRHeader] = [
             dns.RRHeader(name=d.hostname, payload=d.record, ttl=d.record.ttl or self._ttl, auth=True) for d in results]
-        authority: list[dns.RRHeader] = []
+        authority: list[dns.RRHeader] = [
+            dns.RRHeader(name=d.hostname, payload=d.record, ttl=d.record.ttl or self._ttl, auth=True) for d in results]
         additional: list[dns.RRHeader] = []
 
         """

@@ -5,15 +5,11 @@ To understand how json web tokens work see: https://github.com/bendemott/homedns
 """
 import json
 import os
-import re
-import sys
 import traceback
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from os.path import dirname, join, isfile
-from typing import Any
-import textwrap
 
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -26,7 +22,6 @@ from twisted.logger import Logger
 from twisted.web.iweb import ICredentialFactory
 from twisted.cred import error
 from zope.interface import implementer
-from OpenSSL import crypto
 
 from homedns.config import AbstractConfig, set_file_permissions
 from homedns.constants import DEFAULT_JWT_SUBJECTS_PATH
@@ -37,7 +32,7 @@ SUBJECT_KEY = 'sub'   # user id / username
 ISSUED_AT_KEY = 'iat'
 EXPIRES_AT_KEY = 'exp'
 NOT_BEFORE_KEY = 'nbf'
-JWT_ID_KEY = 'jti'  # onotonically incrementing number (replay prevention) (optional)
+JWT_ID_KEY = 'jti'  # monotonically incrementing number (replay prevention) (optional)
 
 
 @dataclass

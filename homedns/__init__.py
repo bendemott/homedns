@@ -1,1 +1,1 @@
-__version__ = '1.0.3'  # project version
+__version__ = '1.0.4'  # project version
