@@ -151,7 +151,7 @@ class AbstractConfig(ABC):
         """
         Retrieve current configuration
         """
-        if getmtime(self.path) > self.modified:
+        if self.path and isfile(self.path) and getmtime(self.path) > self.modified:
             self.reload()
 
         return self._config
@@ -162,22 +162,29 @@ class AbstractConfig(ABC):
         """
         self.load_file(self._path)
 
-    def set_permissions(self, path, mode=None, owner=None, group=None):
+    def set_permissions(self, mode: int, owner: str = None, group: str = None):
         """
-        :param path: File to configure permissions for
+        Set permissions on the configuration on-disk file
+
         :param mode: File permissions mode, 0o640
         :param owner: Set explicit owner of the file, default is the parent directory owner
         :param group: Set explicit group of the file, default is the parent directory group
         """
-        set_file_permissions(path, mode, owner, group)
+        set_file_permissions(self._path, mode, owner, group)
 
-    def initialize_file(self, path, contents=''):
+    def initialize_file(self, contents: str = ''):
         """
         Initialize the configuration if the path doesn't exist
         Some configurations need to be empty files to be used correctly.
+
+        This method is not called automatically, its up to the implementation if it wants a defaulted
+        configuration when one does not exist.
+
+        :param contents: The initial contents of the file
         """
+        path = self.path
         try:
-            if not isfile(path):
+            if not path or not isfile(path):
                 with open(path, 'w') as fp:
                     fp.write(contents)
         except PermissionError as e:
@@ -185,27 +192,31 @@ class AbstractConfig(ABC):
                             f'Error: {e}')
             return
 
-    def load_file(self, path):
+    def load_file(self, path: str):
         """
         Load yaml configuration from file
         """
         self._path = path
-        try:
-            self._modify_time = getmtime(path)
+
+        if path and isfile(path):
             self._config = load(open(path, 'r'), Loader) or {}  # an empty file will load to None
-        except FileNotFoundError:
+            self._modify_time = getmtime(path)
+            directory = dirname(path)
+        else:
             self._modify_time = 0
             self._config = {}
-        self.apply_defaults(self.get_default(dirname(path)))
+            directory = ''  # default paths will be relative
+
+        self._config = self.apply_defaults(self.get_default(directory))
 
     @abstractmethod
     def get_default(self, directory: str):
         pass
 
-    def apply_defaults(self, default_config=None):
-        return self._recursive_update(self._config, default_config or self.get_default())
+    def apply_defaults(self, default_config: dict) -> dict:
+        return self._recursive_update(self._config, default_config)
 
-    def _recursive_update(self, config, defaults):
+    def _recursive_update(self, config: dict, defaults: dict) -> dict:
         # d is the thing we are updating
         def update(d, u):
             for k, v in u.items():
@@ -215,7 +226,9 @@ class AbstractConfig(ABC):
                     d[k] = v
             return d
 
-        return update(config, defaults)
+        # copy defaults in place
+        defaults = copy.deepcopy(defaults)
+        return update(defaults, config)
 
     def update(self):
         """
@@ -227,6 +240,7 @@ class AbstractConfig(ABC):
     def __str__(self):
         return dump(self._config, indent=2, Dumper=Dumper)
 
+
 class ServerConfig(AbstractConfig):
     def __init__(self, path=DEFAULT_SERVER_CONFIG_PATH):
         super().__init__(path)
@@ -235,6 +249,7 @@ class ServerConfig(AbstractConfig):
         if not directory:
             directory = os.getcwd()
 
+        # TODO maintain in a file
         conf = {
             "http": None,
             "https": {
@@ -271,6 +286,7 @@ class ServerConfig(AbstractConfig):
             "dns": {
                 "listen_tcp": dns.PORT,
                 "listen_udp": dns.PORT,
+                "soa_domains": [],
                 "cache": {
                     "enabled": True
                 },

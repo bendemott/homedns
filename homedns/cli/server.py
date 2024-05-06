@@ -19,16 +19,16 @@ except ImportError:
     from yaml import Loader, Dumper
 
 START_COMMAND = 'start'
-CONFIG_DUMP_COMMAND = 'config-dump'
-CONFIG_TEMPLATE_COMMAND = 'config-template'
+CONFIG_COMMAND = 'config'
 
 
 def config_dump(args):
-    config = ServerConfig()
+    server = ServerConfig(args.config)
+
     if args.json:
-        contents = json.dumps(config.config, indent=4)
+        contents = json.dumps(server.config, indent=4)
     else:
-        contents = str(config)
+        contents = str(server)
 
     if args.save:
         if not isfile(args.save) or args.overwrite:
@@ -38,13 +38,17 @@ def config_dump(args):
         else:
             print(f'Configuration already exists at "{args.save}", use --overwrite to replace')
 
-    if args.save_to_default:
+    elif args.save_to_default:
         if not isfile(DEFAULT_SERVER_CONFIG_PATH) or args.overwrite:
             with open(DEFAULT_SERVER_CONFIG_PATH, 'w') as fp:
                 fp.write(contents)
                 print(f'Configuration written to: "{DEFAULT_SERVER_CONFIG_PATH}"')
         else:
             print(f'Configuration already exists at "{DEFAULT_SERVER_CONFIG_PATH}", use --overwrite to replace')
+
+    else:
+        print(contents)
+
 
 def main(argv=None):
     argv = argv or sys.argv
@@ -72,7 +76,7 @@ def main(argv=None):
     # /////////////////////////////////////////////////////////////////////////
     # /////////////////////////////////////////////////////////////////////////
 
-    server = subparsers.add_parser(CONFIG_DUMP_COMMAND, help='Show working config')
+    server = subparsers.add_parser(CONFIG_COMMAND, help='Show working config')
     server.add_argument(
         '--config',
         metavar='PATH',
@@ -108,7 +112,7 @@ def main(argv=None):
     if args.command == START_COMMAND:
         server = ServerConfig(args.config)
         server_main(server, DEFAULT_LOG_LEVEL if not args.debug else 'debug')
-    elif args.command == CONFIG_DUMP_COMMAND:
+    elif args.command == CONFIG_COMMAND:
         config_dump(args)
 
 

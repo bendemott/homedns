@@ -154,3 +154,5 @@ cython_debug/
 # Certificates
 *.crt
 *.key
+
+local/

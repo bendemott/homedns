@@ -57,7 +57,7 @@ def setup_dns(config: dict, store: IRecordStorage):
         log.info('Enabling DNS Caching')
 
     factory = server.DNSServerFactory(
-        authorities=[HomeDnsResolver(store)],
+        authorities=[HomeDnsResolver(store, soa_domains=config['dns']['soa_domains'])],
         caches=caches,
         clients=clients,
         verbose=int(config['dns']['verbosity'])
