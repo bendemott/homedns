@@ -3,7 +3,7 @@ import sys
 from ipaddress import IPv4Address
 
 from twisted.names import dns
-from twisted.names.dns import Record_A
+from twisted.names.dns import Record_A, Record_CNAME
 from twisted.internet import threads
 
 from klein import Klein
@@ -25,10 +25,23 @@ class DNSRestApi:
     """
     app = Klein()
 
-    def __init__(self, store: IRecordStorage, default_ttl=300):
+    def __init__(self, store: IRecordStorage, soa_domains: list[str] = None, default_ttl=600):
         self.store = store
         self.log = Logger(self.__class__.__name__, observer=textFileLogObserver(sys.stdout))
         self._ttl = default_ttl
+        self._soa_domains = soa_domains or []
+        self._soa = {tuple(d.split('.')) for d in soa_domains}
+
+    def is_soa_domain(self, name) -> bool:
+        domain = name.split('.')
+        if not len(domain) < 2:
+            return False
+
+        return tuple(domain[-2:]) in self._soa
+
+    def error_response(self, msg, code, request):
+        request.setResponseCode(code)
+        return json.dumps({'error': msg, 'ok': False, 'code': code})
 
     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -43,6 +56,9 @@ class DNSRestApi:
     @app.route('/upsert/a/<hostname>', methods=['PUT'])
     async def upsert_a_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
+
+        if not self.is_soa_domain(hostname):
+            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
 
         payload = request.content.read().decode()
         try:
@@ -77,6 +93,9 @@ class DNSRestApi:
     async def update_a_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
 
+        if not self.is_soa_domain(hostname):
+            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+
         payload = request.content.read().decode()
         self.log.debug('received payload: {json}', json=payload)
         try:
@@ -100,6 +119,10 @@ class DNSRestApi:
     @app.route('/create/a/<hostname>', methods=['POST'])
     async def create_a_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
+
+        if not self.is_soa_domain(hostname):
+            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+
         payload = request.content.read().decode()
         try:
             data = json.loads(payload)
@@ -139,4 +162,47 @@ class DNSRestApi:
             request.setResponseCode(NOT_FOUND)
         return json.dumps({'deleted': count, 'success': bool(count)}, indent=4)
 
+    # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    @app.route('/hostname/cname/<hostname>', methods=['GET'])
+    async def get_a_by_hostname(self, request: Request, hostname: str):
+        """
+        Lookup CNAME record by the domain name.
+        The domain name is what the cname is resolved by
+        The alias is what the cname points to, another domain
+        """
+        request.setHeader(b'Content-Type', b'application/text')
+        result: list[HostnameAndRecord] = await threads.deferToThread(self.store.get_record_by_hostname,
+                                                                      fqdn=hostname, record_type=dns.CNAME)
+        data = []
+        for r in result:
+            data.append({'hostname': r.hostname, 'alias': r.record.name.name.decode(), 'modified': r.modified})
+        return json.dumps(data, indent=4)
+
+    # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    @app.route('/create/cname/<hostname>', methods=['POST'])
+    async def create_cname_record(self, request: Request, hostname: str):
+        request.setHeader(b'Content-Type', b'application/text')
+
+        if not self.is_soa_domain(hostname):
+            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+
+        payload = request.content.read().decode()
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError as e:
+            raise Error(BAD_REQUEST, f'Bad JSON Body {e}'.encode(), str(e).encode())
+        try:
+            alias = data['alias']  # alias is the domain that the name record redirects to
+            ttl = data.get('ttl', self._ttl)
+        except KeyError as e:
+            raise Error(BAD_REQUEST, f'Missing field in payload: {e.args[0]}'.encode())
+
+        record = Record_CNAME(name=alias, ttl=ttl)
+        await threads.deferToThread(self.store.create_record, record=record, fqdn=hostname)
+        request.setResponseCode(CREATED)
+        return json.dumps({'success': True}, indent=4)

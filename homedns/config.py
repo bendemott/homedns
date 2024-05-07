@@ -279,6 +279,7 @@ class ServerConfig(AbstractConfig):
             "dns": {
                 "listen_tcp": dns.PORT,
                 "listen_udp": dns.PORT,
+                "nameservers": [],
                 "soa_domains": [],
                 "cache": {
                     "enabled": True

@@ -32,6 +32,7 @@ basic_auth:
 dns: # DNS Server settings
   listen_tcp: 53
   listen_udp: 53
+  nameservers: [] # your nameservers, typically ns1.mydomain.com
   soa_domains: []
   cache: # cache requests
     enabled: true

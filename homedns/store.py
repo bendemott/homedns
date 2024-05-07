@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from ipaddress import ip_address, IPv4Address, IPv6Address
 import time
 from datetime import datetime
-from typing import Iterator
+from typing import Iterator, Iterable
 
 from twisted.names import dns
-from twisted.names.dns import IRecord, Record_A, Record_AAAA, Record_MX, Record_CNAME
+from twisted.names.dns import IRecord, Record_A, Record_AAAA, Record_MX, Record_CNAME, Record_NS, Record_SOA
 import threading
 
 from tabulate import tabulate
@@ -43,13 +43,15 @@ class IRecordStorage(ABC):
         dns.A: Record_A,
         dns.AAAA: Record_AAAA,
         dns.CNAME: Record_CNAME,
-        dns.MX: Record_MX
+        dns.MX: Record_MX,
+        dns.SOA: Record_SOA,
+        dns.NS: Record_NS
     }
     RECORD_CLASSES = RECORD_MAP.values()
     RECORD_CLASS_NAMES = {cls.__name__: cls for cls in RECORD_CLASSES}
 
     @abstractmethod
-    def name_search(self, hostname: str, record_type: int = None) -> Iterator[HostnameAndRecord]:
+    def name_search(self, hostname: str, record_types: int | Iterable[int] = None) -> Iterator[HostnameAndRecord]:
         pass
 
     @abstractmethod
@@ -158,25 +160,29 @@ class SqliteStorage(IRecordStorage):
     def construct_record(record_class: IRecord, ttl: int, alias: str = None, address: str = None, priority: int = None) \
             -> Record_A | Record_CNAME | Record_MX | Record_AAAA:
         if record_class == Record_A:
-            return Record_A(address=address.lower(), ttl=ttl)
+            return Record_A(address=address, ttl=ttl)
         elif record_class == Record_CNAME:
-            return Record_CNAME(name=alias.lower(), ttl=ttl)
+            return Record_CNAME(name=alias, ttl=ttl)
         elif record_class == Record_MX:
-            return Record_MX(name=alias.lower(), priority=priority, ttl=ttl)
+            return Record_MX(name=alias, priority=priority, ttl=ttl)
         elif record_class == Record_AAAA:
-            return Record_AAAA(address=address.lower(), ttl=ttl)
+            return Record_AAAA(name=address, ttl=ttl)
+        elif record_class == Record_NS:
+            return Record_NS(name=alias, ttl=ttl)
         else:
             raise ValueError(f'unsupported record type: {record_class.__name__} [{record_class.TYPE}]')
 
-    def name_search(self, hostname: str, record_type: int = None) -> list[HostnameAndRecord]:
+    def name_search(self, hostname: str, record_types: int | Iterable[int] = None) -> list[HostnameAndRecord]:
         """
-        Search for records by hostname, limimt the search to `query_type`
+        Search for records by hostname, limit the search to `record_type`
 
         :param hostname: the hostname to search for
-        :param record_type: a value like `dns.A`, `dns.CNAME`, `dns.MX`, etc.
+        :param record_types: a value like `dns.A`, `dns.CNAME`, `dns.MX`, OR a list of these values
         """
-        if record_type not in dns.QUERY_TYPES:
-            raise DNSServerError(f'not a valid record type constant: {record_type}')
+        if isinstance(record_types, int):
+            record_types = [record_types]
+
+        record_types = [r for r in record_types if r is not None]
 
         conn = self.initialize()
 
@@ -185,12 +191,15 @@ class SqliteStorage(IRecordStorage):
 
         # query_type acts as a filter to control what record types are returned
         filter_cond = ''
-        if record_type:
-            filter_cond = 'AND type = ?'
+        if record_types:
+            tpl = ['?'] * len(record_types)
+            tpl = ', '.join(tpl)
+            filter_cond = f'AND type in ({tpl})'
             try:
-                sql_args.append(self.RECORD_MAP[record_type].__name__)
+                for rtype in record_types:
+                    sql_args.append(self.RECORD_MAP[rtype].__name__)
             except KeyError as e:
-                raise DNSNotImplementedError(f'Unsupported record type: "{dns.QUERY_TYPES.get(record_type)}" [{record_type}]')
+                raise DNSNotImplementedError(f'Unsupported record type: [{dns.QUERY_TYPES.get(e.args[0], str(e))}]')
 
         records = []
 
@@ -200,14 +209,22 @@ class SqliteStorage(IRecordStorage):
                                     f"{self.RECORDS_TABLE} WHERE fqdn = ? {filter_cond}", sql_args)
             data = cursor.fetchall()
 
+        cname_a_lookups = []
         for row in data:
-            record_type, fqdn, alias, address, ttl, priority, updated = row
+            record_name, fqdn, alias, address, ttl, priority, updated = row
 
-            record_class = SqliteStorage.get_record_class(record_type)
+            record_class = SqliteStorage.get_record_class(record_name)
             record = SqliteStorage.construct_record(record_class, ttl=ttl, alias=alias, address=address, priority=priority)
 
             datum = HostnameAndRecord(record=record, modified=updated, hostname=fqdn)
             records.append(datum)
+
+            # an A search returns cnames, and the A hostnames related to the cname
+            if isinstance(record, Record_CNAME) and dns.A in record_types:
+                cname_a_lookups.append(record.name.name.decode())
+
+        for a_name in cname_a_lookups:
+            records.extend(self.name_search(hostname=a_name, record_types=dns.A))
 
         return records
 
@@ -220,8 +237,6 @@ class SqliteStorage(IRecordStorage):
         """
         conn = self.initialize()
 
-        cname = cname.lower()
-
         records = []
 
         with self.mutex:
@@ -232,10 +247,8 @@ class SqliteStorage(IRecordStorage):
         for row in data:
             record_type, fqdn, alias, address, ttl, priority, updated = row
             ttl = ttl if ttl > 0 else None
-            priority = priority or 0
 
-            dns_class = SqliteStorage.get_record_class(record_type)
-            record = SqliteStorage.create_record(dns_class, ttl, alias, address, priority)
+            record = Record_CNAME(alias, ttl)
 
             datum = HostnameAndRecord(record=record, modified=updated, hostname=fqdn)
             records.append(datum)
@@ -243,9 +256,11 @@ class SqliteStorage(IRecordStorage):
         return records
 
     def address_search(self, address: str) -> list[AddressAndRecord]:
+        """
+        Search by address field, address field is usually used for A record IP addresses
+        """
         conn = self.initialize()
 
-        address = address.lower().decode()
         records = []
 
         with self.mutex:
@@ -279,7 +294,6 @@ class SqliteStorage(IRecordStorage):
             record_type = record.__class__
             type_name = record_type.__name__
             assert (record.TYPE is not None)
-            fqdn = fqdn.lower()  # domain names are case-insensitive
             cursor = conn.cursor()
 
             updated = datetime.now()
@@ -316,7 +330,7 @@ class SqliteStorage(IRecordStorage):
                         AND
                         alias = ?
                     """,
-                    (fqdn, record.ttl, updated, type_name, record.cname.lower().decode()))
+                    (fqdn, record.ttl, updated, type_name, record.name.lower().decode()))
 
             elif record_type == Record_MX:
                 # for a mx record
@@ -382,15 +396,18 @@ class SqliteStorage(IRecordStorage):
                                (type_name, fqdn, str(ipaddress.ip_address(record.address)), record.ttl, updated))
 
             elif record_type == Record_CNAME:
+                #  CNAME record for www.example.com pointing to example.com
+                # fqdn in this case is `www.example.com` (the name the record is known by)
+                # and `name` is `example.com` (the alias)
                 cursor.execute(f"INSERT INTO {self.RECORDS_TABLE} (type, fqdn, alias, ttl, updated) VALUES(?, ?, ?, ?, ?)",
-                               (type_name, fqdn, record.cname.lower().decode(), record.ttl, updated))
+                               (type_name, fqdn, record.name.name.decode(), record.ttl, updated))
 
             elif record_type == Record_MX:
                 # for a mx record
                 #   fqdn is the domain to match the record against
                 #   alias is the domain name of the mail server
                 cursor.execute(f"INSERT INTO {self.RECORDS_TABLE} (type, fqdn, alias, priority, ttl, updated) VALUES(?, ?, ?, ?, ?, ?)",
-                               (type_name, fqdn, record.name.lower().decode(), record.priority, record.ttl, updated))
+                               (type_name, fqdn, record.name.name.decode(), record.priority, record.ttl, updated))
             else:
                 raise ValueError(f'unsupported record type: {type_name} [{record_type.TYPE}]')
 
@@ -402,7 +419,7 @@ class SqliteStorage(IRecordStorage):
         :param fqdn: The domain name to search for
         :param record_type: A constant from `dns`... `dns.A` etc.
         """
-        return self.name_search(hostname=fqdn, record_type=record_type)
+        return self.name_search(hostname=fqdn, record_types=record_type)
 
     def delete_record_by_hostname(self, fqdn: str, record_type: int) -> int:
         """
@@ -426,7 +443,6 @@ class SqliteStorage(IRecordStorage):
             conn.commit()
 
             return cursor.rowcount
-
 
     def log_table(self):
         """

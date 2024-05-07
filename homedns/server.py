@@ -56,8 +56,13 @@ def setup_dns(config: dict, store: IRecordStorage):
         caches.append(cache.CacheResolver())
         log.info('Enabling DNS Caching')
 
+    # setup our custom resolver that will resolves records for our authoritative domains
+    homedns_resolver = HomeDnsResolver(store,
+                                       soa_domains=config['dns']['soa_domains'],
+                                       name_servers=config['dns']['nameservers'])
+
     factory = server.DNSServerFactory(
-        authorities=[HomeDnsResolver(store, soa_domains=config['dns']['soa_domains'])],
+        authorities=[homedns_resolver],
         caches=caches,
         clients=clients,
         verbose=int(config['dns']['verbosity'])
@@ -109,7 +114,7 @@ def setup_rest(config, store):
     The klein app is just a fancy resource under the hood.
     You can use Klein() as any other resource in twisted.
     """
-    klein_app = DNSRestApi(store).app
+    klein_app = DNSRestApi(store, soa_domains=config['dns']['soa_domains']).app
     resource = secure_resource(config, klein_app.resource())
     site = Site(resource)
 

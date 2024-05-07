@@ -21,6 +21,7 @@ JWT_KEY_ENV = 'JWT_KEY'
 IP4_COMMAND = 'IP4'
 ENV_COMMAND = 'ENV'
 A_COMMAND = 'A'
+CNAME_COMMAND = 'CNAME'
 SUB_COMMAND = 'sub_command'
 GET_COMMAND = 'GET'
 UPDATE_COMMAND = 'UPDATE'
@@ -127,6 +128,19 @@ def cli_A(args, client):
     print(result)
 
 
+def cli_CNAME(args, client):
+    action = args.sub_command
+    if action == GET_COMMAND:
+        result = client.get_cname_by_hostname(args.name)
+
+    elif action == CREATE_COMMAND:
+        result = client.create_cname_record(hostname=args.name, alias=args.alias, ttl=args.ttl)
+
+    else:
+        raise UserWarning(f'Invalid [{CNAME_COMMAND}] command: "{action}"')
+
+    print(result)
+
 def main(argv=None):
     argv = argv or sys.argv
 
@@ -189,6 +203,24 @@ def main(argv=None):
     delete.add_argument('name', metavar='HOST', help=f'Delete all records associated with this host name')
 
     # /////////////////////////////////////////////////////////////////////////
+    # ///////////////////////   CNAME GROUP   /////////////////////////////////
+    parser_a = subparsers.add_parser(CNAME_COMMAND, aliases=[CNAME_COMMAND.lower()], help=f'A Record Operations')
+
+    subparsers_CNAME = parser_a.add_subparsers(dest=SUB_COMMAND)
+
+    # ////////////////////////////   GET   ////////////////////////////////////
+
+    get = subparsers_CNAME.add_parser(GET_COMMAND, help='Retrieve CNAME record')
+    get.add_argument('name', metavar='HOST', help=f'Hostname')
+
+    # //////////////////////////   CREATE   ///////////////////////////////////
+
+    create = subparsers_CNAME.add_parser(CREATE_COMMAND, help='Create CNAME record')
+    create.add_argument('name', metavar='HOST', help=f'Hostname')
+    create.add_argument('--alias', help='Alias is the host the cname resolves to.')
+    create.add_argument('--ttl', type=int, help='Time to live', default=DEFAULT_TTL)
+
+    # /////////////////////////////////////////////////////////////////////////
     # /////////////////////////////////////////////////////////////////////////
 
     add_env_defaults(parser)
@@ -211,6 +243,8 @@ def main(argv=None):
     try:
         if args.command == A_COMMAND:
             cli_A(args, client)
+        elif args.command == CNAME_COMMAND:
+            cli_CNAME(args, client)
         elif args.command == IP4_COMMAND:
             cli_ip4(args, client)
         elif args.command == ENV_COMMAND:

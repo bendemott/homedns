@@ -244,9 +244,6 @@ class Client:
         return self.post(f'/create/a/{hostname}', {'address': address, 'ttl': ttl})
 
     def upsert_a_record(self, hostname: str, address: str, ttl: int):
-        assert isinstance(hostname, str)
-        assert isinstance(address, str)
-        assert isinstance(ttl, int)
         return self.put(f'/upsert/a/{hostname}', {'address': address, 'ttl': ttl})
 
     def delete_a_by_hostname(self, hostname: str):
@@ -263,6 +260,17 @@ class Client:
         Return A records by hostname
         """
         return self.get(f'/hostname/cname/{hostname}')
+
+    def create_cname_record(self, hostname: str, alias: str, ttl: int):
+        """
+        Create a CNAME record
+
+        Imagine a CNAME record for `www.example.com` pointing to `example.com`
+        hostname in this case is `www.example.com` (the name the record is known by)
+        and `name` is `example.com` (the alias). The cname is referenced by the hostname, and response with
+        the alias in return
+        """
+        return self.post(f'/create/cname/{hostname}', {'alias': alias, 'ttl': ttl})
 
     def delete_records_by_hostname(self, hostname, record_type=None):
         return self.delete(f'/hostname/{hostname}', {'type': record_type})
