@@ -297,6 +297,10 @@ class Client:
 
     @classmethod
     def pretty_error(cls, error: HTTPError):
+        try:
+            body = textwrap.indent(error.read(), ' ' * 4)
+        except Exception:
+            body = ''
         headers = cls.pretty_headers(error.headers) or '(No response headers)'
         headers = textwrap.indent(headers, ' ' * 4)
         text = textwrap.dedent(f"""
@@ -304,5 +308,6 @@ class Client:
             URL: {error.url}
             Response Headers:
             %s
-        """) % headers
+            %s
+        """) % (headers, body)
         return text

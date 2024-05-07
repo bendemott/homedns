@@ -32,16 +32,21 @@ class DNSRestApi:
         self._soa_domains = soa_domains or []
         self._soa = {tuple(d.split('.')) for d in soa_domains}
 
-    def is_soa_domain(self, name) -> bool:
+    def get_soa_domain(self, name: str) -> bool:
         domain = name.split('.')
-        if not len(domain) < 2:
+        if len(domain) < 2:
             return False
 
-        return tuple(domain[-2:]) in self._soa
+        soa_tuple = tuple(domain[-2:])
+        if soa_tuple in self._soa:
+            return '.'.join(soa_tuple)
+
+        return False
 
     def error_response(self, msg, code, request):
         request.setResponseCode(code)
-        return json.dumps({'error': msg, 'ok': False, 'code': code})
+        error = json.dumps({'error': msg, 'ok': False, 'code': code})
+        request.setHeader('X-HOMEDNS-Error', error)
 
     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -57,8 +62,9 @@ class DNSRestApi:
     async def upsert_a_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
 
-        if not self.is_soa_domain(hostname):
-            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+        if not self.get_soa_domain(hostname):
+            self.log.warn(f'{hostname} - adding domain which is not in configuration `dns.soa_domains`'
+                          f'You may not be able to query this record without adjusting configuration')
 
         payload = request.content.read().decode()
         try:
@@ -93,8 +99,9 @@ class DNSRestApi:
     async def update_a_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
 
-        if not self.is_soa_domain(hostname):
-            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+        if not self.get_soa_domain(hostname):
+            self.log.warn(f'{hostname} - adding domain which is not in configuration `dns.soa_domains`'
+                          f'You may not be able to query this record without adjusting configuration')
 
         payload = request.content.read().decode()
         self.log.debug('received payload: {json}', json=payload)
@@ -120,8 +127,9 @@ class DNSRestApi:
     async def create_a_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
 
-        if not self.is_soa_domain(hostname):
-            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+        if not self.get_soa_domain(hostname):
+            self.log.warn(f'{hostname} - adding domain which is not in configuration `dns.soa_domains`'
+                          f'You may not be able to query this record without adjusting configuration')
 
         payload = request.content.read().decode()
         try:
@@ -188,8 +196,9 @@ class DNSRestApi:
     async def create_cname_record(self, request: Request, hostname: str):
         request.setHeader(b'Content-Type', b'application/text')
 
-        if not self.is_soa_domain(hostname):
-            return self.error_response(f'Not a soa domain: "{hostname}"', BAD_REQUEST, request)
+        if not self.get_soa_domain(hostname):
+            self.log.warn(f'{hostname} - adding domain which is not in configuration `dns.soa_domains`'
+                          f'You may not be able to query this record without adjusting configuration')
 
         payload = request.content.read().decode()
         try:

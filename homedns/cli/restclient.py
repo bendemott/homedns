@@ -141,6 +141,7 @@ def cli_CNAME(args, client):
 
     print(result)
 
+
 def main(argv=None):
     argv = argv or sys.argv
 
